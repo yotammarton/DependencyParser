@@ -205,7 +205,6 @@ print("path_test -", path_test)
 
 paths_list = [path_train, path_test]
 word_dict, pos_dict = get_vocabs(paths_list)
-breakpoint()
 train = PosDataset(word_dict, pos_dict, data_dir, 'train1', padding=False)
 # ידגום לנו כל פעם משפטים מתוך הדאטא סט כי נרצה רנדומליות
 train_dataloader = DataLoader(train, shuffle=True)
