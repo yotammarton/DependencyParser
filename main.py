@@ -94,7 +94,7 @@ class DataReader:
                     sentence, tags, heads = [ROOT_TOKEN], [UNKNOWN_TOKEN], []
                 else:
                     splited_values = re.split('\t', line)
-                    m = int(splited_values[0])
+                    # m = int(splited_values[0])
                     h = int(splited_values[6])
                     word = splited_values[1]
                     pos = splited_values[3]
@@ -111,6 +111,24 @@ class DataReader:
     def get_num_sentences(self):
         """returns num of sentences in data"""
         return len(self.D)
+
+
+def init_pos_vocab(pos_dict):
+    """
+    :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
+    :return: index mapping for POS tags
+    """
+    # pay attention we changed this a little bit - if everything's ok delete this comment
+    idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
+    pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
+
+    for i, pos in enumerate(sorted(pos_dict.keys())):
+        # pos_idx_mappings[str(pos)] = int(i)
+        pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
+        idx_pos_mappings.append(str(pos))
+    print("idx_pos_mappings -", idx_pos_mappings)  # TODO DEL
+    print("pos_idx_mappings -", pos_idx_mappings)  # TODO DEL
+    return pos_idx_mappings, idx_pos_mappings
 
 
 class DependencyDataset(Dataset):
@@ -134,7 +152,7 @@ class DependencyDataset(Dataset):
             self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
 
         # pos embeddings
-        self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab(self.datareader.pos_dict)
+        self.pos_idx_mappings, self.idx_pos_mappings = init_pos_vocab(self.datareader.pos_dict)
         # self.pos_vectors = nn.Embedding(pos_vocab_size, pos_embedding_dim)
         self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
 
@@ -161,6 +179,8 @@ class DependencyDataset(Dataset):
 
     @staticmethod
     def init_word_embeddings(word_dict, word_embd_dim):
+        if word_embd_dim not in [50, 100, 200, 300]:
+            raise ValueError("word_embd_dim should be one of [50, 100, 200, 300]")
         glove = Vocab(Counter(word_dict), vectors=f"glove.6B.{word_embd_dim}d", specials=SPECIAL_TOKENS)
         return glove.stoi, glove.itos, glove.vectors
 
@@ -170,22 +190,6 @@ class DependencyDataset(Dataset):
     # return idx mapping for POS tags
     # idx_pos_mappings - ['<root>', '<unk>', '#', '$', ....]
     # pos_idx_mappings - {'<root>': 0, '<unk>': 1, '#': 2, '$': 3, ..... }
-    def init_pos_vocab(self, pos_dict):
-        """
-        :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
-        :return: index mapping for POS tags
-        """
-        # pay attention we changed this a little bit - if everything's ok delete this comment
-        idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
-        pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
-
-        for i, pos in enumerate(sorted(pos_dict.keys())):
-            # pos_idx_mappings[str(pos)] = int(i)
-            pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
-            idx_pos_mappings.append(str(pos))
-        print("idx_pos_mappings -", idx_pos_mappings)  # TODO DEL
-        print("pos_idx_mappings -", pos_idx_mappings)  # TODO DEL
-        return pos_idx_mappings, idx_pos_mappings
 
     def get_pos_vocab(self):
         return self.pos_idx_mappings, self.idx_pos_mappings
@@ -237,8 +241,15 @@ class DependencyDataset(Dataset):
 # בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
 # בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_dim, use_pre_trained=True):
+        """
+        :param dataset: dataset for training
+        :param hidden_dim: size of hidden dim (output of LSTM)
+        :param MLP_dim: controls the matrix size W1 (MLP_dim x MLP_dim) and so that the length of W2 vector
+        :param use_pre_trained: bool.
+        """
         super(KiperwasserDependencyParser, self).__init__()
+        self.dataset = dataset
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
@@ -258,20 +269,22 @@ class KiperwasserDependencyParser(nn.Module):
                                num_layers=1, bidirectional=True, batch_first=True)
 
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
-        self.edge_scorer = 0
-
-        # This is used to produce the maximum spanning tree during inference
-        self.decoder = decode_mst
-
-        # Implement the loss function NLLLoss from the instructions
-        self.loss_function = 0
+        # MLP(x) = W2 * tanh(W1 * x + b1) + b2
+        # W1 - Matrix (MLP_dim x MLP_dim) || W2, b1 - Vectors (MLP_dim) || b2 - Scalar
+        # https://www.kaggle.com/pinocookie/pytorch-simple-mlp
+        # TODO possible change to (500, dim) , (dim, 1) - we can control the dimension
+        self.edge_scorer = nn.Sequential(
+            # W1 * x + b1
+            nn.Linear(500, MLP_dim),
+            # tanh(W1 * x + b1)
+            nn.Tanh(),
+            # W2 * tanh(W1 * x + b1) + b2
+            nn.Linear(MLP_dim, 1)
+        )
 
     def forward(self, sample):
-        # sentence = ['<root>', 'Mr', 'bibi', 'is', 'chairman']
-        # true_tree_heads = [2, 3, 0, 3]
-        # (2,1+0), (3,1+1) (0,1+2), (3,1+3)
-
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
+        original_sentence_in_words = [self.dataset.idx_word_mappings[w] for w in word_idx_tensor[0]]  # for our use
 
         # Pass word_idx and pos_idx through their embedding layers
         # size = [batch_size, seq_length, emb_dim]
@@ -284,7 +297,7 @@ class KiperwasserDependencyParser(nn.Module):
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
-        # TODO this looks weird to yotam because its like processing n (len sentence) sentences of length 1
+        # TODO this looks weird to Yotam because its like processing n (len sentence) sentences of length 1
         # size = [seq_length, batch_size, 2*hidden_dim] -- Eyal
         # lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
 
@@ -292,16 +305,44 @@ class KiperwasserDependencyParser(nn.Module):
         lstm_out, _ = self.encoder(word_pos_embeddings)
 
         # Get score for each possible edge in the parsing graph, construct score matrix
+        n = lstm_out.shape[1]  # TODO change if we change the lstm_out line (5 lines before)
+        # n = original sentence length + 1
+        MLP_scores_mat = np.full((n, n), -np.inf)  # head is rows, modifier is cols
+        # TODO come here if there's a problem with scores / weird shit (we used -np.inf)
+        for h in range(n):
+            for m in range(n):
+                if h == m or m == 0:
+                    continue
+                else:
+                    head_vector = lstm_out.data[0][h]  # 0 because the batch size = 1 always in our case
+                    modifier_vector = lstm_out.data[0][m]
+                    h_m_concat = torch.cat((head_vector, modifier_vector))
+                    MLP_score = self.edge_scorer(h_m_concat)
+                    MLP_scores_mat[h][m] = MLP_score
 
-        # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
-
-        # Calculate the negative log likelihood loss described above
-        loss = 0  # TODO
-        predicted_tree = 0  # TODO
-        return loss, predicted_tree
+        return MLP_scores_mat
 
 
-def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
+def evaluate(model, dataloader):
+    # TODO verify, it was written in 00:00 AM dude
+    acc = 0
+    # להגיד למודל לא ללמוד כרגע
+    with torch.no_grad():
+        # דוגמים מהדאטא לאודר
+        for batch_idx, input_data in enumerate(dataloader):
+            MLP_scores_mat = model(input_data)
+            gold_heads = input_data[2]
+
+            # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
+            # [-1, 5, 6, 3, 0, 4, 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+            predicted_tree = decode_mst(MLP_scores_mat, length=MLP_scores_mat.shape[0], has_labels=False)
+
+            acc += sum(gold_heads.numpy() == predicted_tree[1:]) / len(gold_heads)
+        acc = acc / len(dataloader)
+    return acc
+
+
+def train_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
     # if we want the next 2 lines we need the 'train' object from main() inside 'model' object
     # word_vocab_size = len(model.word_idx_mappings)
     # tag_vocab_size = len(model.pos_idx_mappings)
@@ -313,10 +354,10 @@ def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim
         model.cuda()
 
     # Define the loss function as the Negative Log Likelihood loss (NLLLoss)
-    loss_function = nn.NLLLoss()
+    loss_function = nn.NLLLoss()  # TODO change
 
     # We will be using a simple SGD optimizer to minimize the loss function
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)  # TODO optimize learning rate 'lr'
     acumulate_grad_steps = 50  # This is the actual batch_size, while we officially use batch_size=1
 
     # Training start
@@ -329,9 +370,11 @@ def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim
         i = 0
         for batch_idx, input_data in enumerate(dataloader):
             i += 1
-            # TODO change from here
-            tag_scores = model(input_data)
-            tag_scores = tag_scores.unsqueeze(0).permute(0, 2, 1)
+            MLP_scores_mat = model(input_data)
+
+            # TODO change from here down
+
+            # tag_scores = tag_scores.unsqueeze(0).permute(0, 2, 1)
             # print("tag_scores shape -", tag_scores.shape)
             # print("pos_idx_tensor shape -", pos_idx_tensor.shape)
             loss = loss_function(tag_scores, pos_idx_tensor.to(device))
@@ -358,6 +401,7 @@ def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim
         loss_list.append(float(printable_loss))
         accuracy_list.append(float(acc))
         # מחשב את ההצלחה על המבחן
+        # TODO pass params to evaluate()
         test_acc = evaluate()
         e_interval = i
         print("Epoch {} Completed,\tLoss {}\tAccuracy: {}\t Test Accuracy: {}".format(epoch + 1,
@@ -367,26 +411,38 @@ def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim
                                                                                       test_acc))
 
         # עם עוד עבודה על פרמטרים וגם עבודה אלגוריתמית אפשר לשפר מאוד את המודל
+        # TODO add graphs
 
 
 def main():
-    path_train = "train.labeled"
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
+    MLP_dim = 500
     epochs = 15
+    use_pre_trained = True
 
-    word_dict, pos_dict = get_vocabs_counts([path_train])
-    train = DependencyDataset(word_dict, pos_dict, path_train, word_embd_dim, pos_embd_dim,
-                              padding=False, use_pre_trained=True)
-    dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, use_pre_trained=True)
+    """TRAIN DATA"""
+    path_train = "train.labeled"
+    train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
+    train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
+                              padding=False, use_pre_trained=use_pre_trained)
+    train_dataloader = DataLoader(train, shuffle=True)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_dim, use_pre_trained=use_pre_trained)
 
-    train_lstm(model, dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
+    """TRAIN THE PARSER ON TRAIN DATA"""
+    train_parser(model, train_dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
 
+    """TEST DATA"""
     path_test = "test.labeled"
+    test_word_dict, test_pos_dict = get_vocabs_counts([path_test])
 
-    breakpoint()
+    test = DependencyDataset(test_word_dict, test_pos_dict, path_test, word_embd_dim, pos_embd_dim,
+                             padding=False, use_pre_trained=use_pre_trained)
+    test_dataloader = DataLoader(test, shuffle=False)
+
+    """EVALUATE ON TEST DATA"""
+    evaluate(model, test_dataloader)
 
 
 if __name__ == "__main__":
