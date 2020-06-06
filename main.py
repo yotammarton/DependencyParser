@@ -21,6 +21,7 @@ from matplotlib import colors
 import seaborn as sns
 import time
 import os
+from chu_liu_edmonds import decode_mst
 
 # Constants
 ROOT_TOKEN = "<root>"
@@ -42,8 +43,8 @@ def get_vocabs_counts(list_of_paths):
             for line in f:
                 if line != "\n":
                     splited_values = re.split('\t', line)
-                    # m = splited_values[0]
-                    # h = splited_values[6]
+                    # m = int(splited_values[0])
+                    # h = int(splited_values[6])
                     word = splited_values[1]
                     pos = splited_values[3]
 
@@ -79,8 +80,8 @@ class PosDataReader:
     def __init__(self, file, word_dict, pos_dict):  # call to readData
         self.file = file
         self.D = list()
-        self.word_dict = word_dict  # TODO need it?
-        self.pos_dict = pos_dict  # TODO need it?
+        self.word_dict = word_dict
+        self.pos_dict = pos_dict
         self.__readData__()
 
     def __readData__(self):
@@ -94,8 +95,8 @@ class PosDataReader:
                     sentence, tags, heads = [ROOT_TOKEN], [], []
                 else:
                     splited_values = re.split('\t', line)
-                    m = splited_values[0]
-                    h = splited_values[6]
+                    m = int(splited_values[0])
+                    h = int(splited_values[6])
                     word = splited_values[1]
                     pos = splited_values[3]
 
@@ -148,12 +149,12 @@ class PosDataset(Dataset):
         # ממיר את המשפטים לדאטאסט - פונקציה חשובה
         self.sentences_dataset = self.convert_sentences_to_dataset(padding)
 
-    # def __len__(self):
-    #     return len(self.sentences_dataset)
+    def __len__(self):
+        return len(self.sentences_dataset)
 
-    # def __getitem__(self, index):
-    #     word_embed_idx, pos_embed_idx, sentence_len = self.sentences_dataset[index]
-    #     return word_embed_idx, pos_embed_idx, sentence_len
+    def __getitem__(self, index):
+        word_embed_idx, pos_embed_idx, sentence_len = self.sentences_dataset[index]
+        return word_embed_idx, pos_embed_idx, sentence_len
 
     @staticmethod
     def init_word_embeddings(word_dict):
@@ -230,11 +231,49 @@ class PosDataset(Dataset):
                                                                      sentence_heads_list))}
 
 
+# בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
+# בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
+class KiperwasserDependencyParser(nn.Module):
+    def __init__(self, *args):
+        super(KiperwasserDependencyParser, self).__init__()
+        self.word_embedding = 0  # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
+        self.pos_embedding = 0  # Implement embedding layer for POS tags
+        self.hidden_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim
+        self.encoder = 0  # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
+        self.edge_scorer = 0  # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
+        self.decoder = decode_mst  # This is used to produce the maximum spannning tree during inference
+        self.loss_function = 0  # Implement the loss function described above
+
+    def forward(self, sentence):
+        word_idx_tensor, pos_idx_tensor, true_tree_heads = sentence
+
+        # sentence = ['<root>', 'Mr', 'zibi', 'is', 'chairman']
+        # true_tree_heads = [2, 3, 0, 3]
+        # (2,1+0), (3,1+1) (0,1+2), (3,1+3)
+
+        # Pass word_idx and pos_idx through their embedding layers
+
+        # Concat both embedding outputs
+
+        # Get Bi-LSTM hidden representation for each word+pos in sentence
+
+        # Get score for each possible edge in the parsing graph, construct score matrix
+
+        # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
+
+        # Calculate the negative log likelihood loss described above
+
+        return loss, predicted_tree
+
+
 def main():
-    path = "train.labeled"
-    word_dict, pos_dict = get_vocabs_counts([path])
-    PosDataReader_ = PosDataReader(path, word_dict, pos_dict)
-    PosDataset_ = PosDataset(word_dict, pos_dict, path, padding=False, word_embeddings=None)
+    path_train = "train.labeled"
+    word_dict, pos_dict = get_vocabs_counts([path_train])
+    train = PosDataset(word_dict, pos_dict, path_train, padding=False, word_embeddings=None)
+    train_dataloader = DataLoader(train, shuffle=True)
+
+    path_test = "test.labeled"
+
     breakpoint()
 
 
