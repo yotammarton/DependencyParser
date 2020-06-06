@@ -39,7 +39,6 @@ def get_vocabs_counts(list_of_paths):
 
     for file_path in list_of_paths:
         with open(file_path) as f:
-            sentence, true_tree = [ROOT_TOKEN], list()
             for line in f:
                 if line != "\n":
                     splited_values = re.split('\t', line)
@@ -87,12 +86,12 @@ class DataReader:
     def __readData__(self):
         """main reader function which also populates the class data structures"""
         with open(self.file) as f:
-            sentence, tags, heads = [ROOT_TOKEN], [], []
+            sentence, tags, heads = [ROOT_TOKEN], [UNKNOWN_TOKEN], []
             for line in f:
                 if line == "\n":
                     if heads:
                         self.D.append((sentence, tags, heads))
-                    sentence, tags, heads = [ROOT_TOKEN], [], []
+                    sentence, tags, heads = [ROOT_TOKEN], [UNKNOWN_TOKEN], []
                 else:
                     splited_values = re.split('\t', line)
                     m = int(splited_values[0])
@@ -106,7 +105,7 @@ class DataReader:
 
                     # e.g.
                     # ['<root>', 'It', 'has', 'no', 'bearing', 'on', 'our', 'work', 'force', 'today', '.'] len = 11
-                    # ['PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']                      len = 10
+                    # ['<unk>', 'PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']             len = 11
                     # ['2', '0', '4', '2', '4', '8', '8', '5', '8', '2']                                   len = 10
 
     def get_num_sentences(self):
@@ -146,7 +145,7 @@ class DependencyDataset(Dataset):
 
         # עבור מילים שלא ראיתי - המודל שלי ידע להתייחס אליהן אבל אני לא מכיר אותן
         self.unknown_idx = self.word_idx_mappings.get(UNKNOWN_TOKEN)
-        self.word_vector_dim = self.word_vectors.size(-1)
+        self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained else self.word_vectors.size(-1)
         # self.sentence_lens = [len(sentence) for sentence in self.datareader.sentences]
         # משפטים שארוכים מהאורך הזה ייחתכו
         # self.max_seq_len = max(self.sentence_lens)
@@ -245,7 +244,7 @@ class KiperwasserDependencyParser(nn.Module):
         # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
         if use_pre_trained:  # use pre trained vectors
             # משתמשים בפרי-טריינד, פרייז=פאלס אומר שאנחנו נאמן את המשקולות בעצמנו גם
-            nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
+            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
         else:
             self.word_embedding = dataset.word_vectors
 
@@ -275,30 +274,35 @@ class KiperwasserDependencyParser(nn.Module):
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
 
         # Pass word_idx and pos_idx through their embedding layers
-        # [batch_size, seq_length, emb_dim]
+        # size = [batch_size, seq_length, emb_dim]
         word_embeddings = self.word_embedding(word_idx_tensor.to(self.device))
-        # [batch_size, seq_length, emb_dim]
+        # size = [batch_size, seq_length, pos_dim]
         pos_embeddings = self.pos_embedding(pos_idx_tensor.to(self.device))
 
-        # Concat both embedding outputs
-        # combine both word_embeddings + pos_embeddings
+        # Concat both embedding outputs: combine both word_embeddings + pos_embeddings
+        # size = [batch_size, seq_length, emb_dim + pos_dim]
+        word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
-        # size = [seq_length, batch_size, 2*hidden_dim]
-        lstm_out, _ = self.encoder(word_embeddings.view(word_embeddings.shape[1], 1, -1))
+        # size = [seq_length, batch_size, 2*hidden_dim] -- Eyal
+        lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
+        # size = [batch_size, seq_length, 2*hidden_dim]
+        # lstm_out, _ = self.encoder(word_pos_embeddings)
 
         # Get score for each possible edge in the parsing graph, construct score matrix
 
         # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
 
         # Calculate the negative log likelihood loss described above
-
+        loss = 0  # TODO
+        predicted_tree = 0  # TODO
         return loss, predicted_tree
 
 
 def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
-    word_vocab_size = len(model.word_idx_mappings)
-    tag_vocab_size = len(model.pos_idx_mappings)
+    # if we want the next 2 lines we need the 'train' object from main() inside 'model' object
+    # word_vocab_size = len(model.word_idx_mappings)
+    # tag_vocab_size = len(model.pos_idx_mappings)
 
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -323,10 +327,8 @@ def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim
         i = 0
         for batch_idx, input_data in enumerate(dataloader):
             i += 1
-            words_idx_tensor, pos_idx_tensor, true_tree_heads = input_data
-
             # TODO change from here
-            tag_scores = model(words_idx_tensor)
+            tag_scores = model(input_data)
             tag_scores = tag_scores.unsqueeze(0).permute(0, 2, 1)
             # print("tag_scores shape -", tag_scores.shape)
             # print("pos_idx_tensor shape -", pos_idx_tensor.shape)
