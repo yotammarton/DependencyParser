@@ -284,10 +284,12 @@ class KiperwasserDependencyParser(nn.Module):
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
+        # TODO this looks weird to yotam because its like processing n (len sentence) sentences of length 1
         # size = [seq_length, batch_size, 2*hidden_dim] -- Eyal
-        lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
+        # lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
+
         # size = [batch_size, seq_length, 2*hidden_dim]
-        # lstm_out, _ = self.encoder(word_pos_embeddings)
+        lstm_out, _ = self.encoder(word_pos_embeddings)
 
         # Get score for each possible edge in the parsing graph, construct score matrix
 
