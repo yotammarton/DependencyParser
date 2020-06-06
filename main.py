@@ -76,7 +76,7 @@ def create_idx_dicts(word_dict, pos_dict):
     return word_idx_dict, pos_idx_dict
 
 
-class PosDataReader:
+class DataReader:
     def __init__(self, file, word_dict, pos_dict):  # call to readData
         self.file = file
         self.D = list()
@@ -114,26 +114,30 @@ class PosDataReader:
         return len(self.D)
 
 
-class PosDataset(Dataset):
-    def __init__(self, word_dict, pos_dict, path: str, padding=False, word_embeddings=None):
+class DependencyDataset(Dataset):
+    def __init__(self, word_dict, pos_dict, path: str, word_embd_dim, pos_embd_dim,
+                 padding=False, use_pre_trained=True):
         super().__init__()
         self.file = path
-        self.datareader = PosDataReader(self.file, word_dict, pos_dict)
+        self.datareader = DataReader(self.file, word_dict, pos_dict)
         self.vocab_size = len(self.datareader.word_dict)
-        # TODO
         # בחלק הזה הוא מסביר על זה שבדוגמא פה הוא עושה שימוש בגלוב עבור האמבדינג
         # ניתן לשפר את המשקולות שלו לדאטא סט שלנו ולא בהכרח להישאר עם המשקולות הקבועות
         # בנוסף, אנחנו נצטרך לעשות וורד-אמבדינג גם לטאגס
-        if word_embeddings:
-            self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = word_embeddings
-        else:  # pre-trained -- Download Glove
-            self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = self.init_word_embeddings(
-                self.datareader.word_dict)
+        if use_pre_trained:  # pre-trained -- Download Glove
+            self.word_idx_mappings, self.idx_word_mappings, self.pre_trained_word_vectors = \
+                self.init_word_embeddings(self.datareader.word_dict, word_embd_dim)
+
+        else:
+            self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
+            self.idx_word_mappings = list(self.word_idx_mappings.keys())
+            # self.word_embedding = nn.Embedding(word_vocab_size, word_embedding_dim)
+            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
 
         # pos embeddings
-        # TODO ADD POS EMBEDDING VECTORS - WE NEED THEM
         self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab(self.datareader.pos_dict)
-        self.pos_vectors = None  # TODO
+        # self.pos_vectors = nn.Embedding(pos_vocab_size, pos_embedding_dim)
+        self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
 
         # במודל הזה אנחנו לא נעשה באטצ'ינג ואנחנו לא נעשה את הריפוד
         # נעשה משהו שקול לעבודה עם באטצ'ים עלידי איזשהו טריק
@@ -157,8 +161,8 @@ class PosDataset(Dataset):
         return word_embed_idx, pos_embed_idx, sentence_len
 
     @staticmethod
-    def init_word_embeddings(word_dict):
-        glove = Vocab(Counter(word_dict), vectors="glove.6B.300d", specials=SPECIAL_TOKENS)
+    def init_word_embeddings(word_dict, word_embd_dim):
+        glove = Vocab(Counter(word_dict), vectors=f"glove.6B.{word_embd_dim}d", specials=SPECIAL_TOKENS)
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -234,22 +238,41 @@ class PosDataset(Dataset):
 # בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
 # בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, *args):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, use_pre_trained=True):
         super(KiperwasserDependencyParser, self).__init__()
-        self.word_embedding = 0  # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
-        self.pos_embedding = 0  # Implement embedding layer for POS tags
-        self.hidden_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim
-        self.encoder = 0  # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
-        self.edge_scorer = 0  # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
-        self.decoder = decode_mst  # This is used to produce the maximum spannning tree during inference
-        self.loss_function = 0  # Implement the loss function described above
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, sentence):
-        word_idx_tensor, pos_idx_tensor, true_tree_heads = sentence
+        # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
+        if use_pre_trained:  # use pre trained vectors
+            # משתמשים בפרי-טריינד, פרייז=פאלס אומר שאנחנו נאמן את המשקולות בעצמנו גם
+            nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
+        else:
+            self.word_embedding = dataset.word_vectors
 
-        # sentence = ['<root>', 'Mr', 'zibi', 'is', 'chairman']
+        # Implement embedding layer for POS tags
+        self.pos_embedding = self.pos_embedding
+
+        self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim
+
+        # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
+        self.encoder = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim,
+                               num_layers=1, bidirectional=True, batch_first=True)
+
+        # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
+        self.edge_scorer = 0
+
+        # This is used to produce the maximum spanning tree during inference
+        self.decoder = decode_mst
+
+        # Implement the loss function NLLLoss from the instructions
+        self.loss_function = 0
+
+    def forward(self, sample):
+        # sentence = ['<root>', 'Mr', 'bibi', 'is', 'chairman']
         # true_tree_heads = [2, 3, 0, 3]
         # (2,1+0), (3,1+1) (0,1+2), (3,1+3)
+
+        word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
 
         # Pass word_idx and pos_idx through their embedding layers
 
@@ -266,11 +289,89 @@ class KiperwasserDependencyParser(nn.Module):
         return loss, predicted_tree
 
 
+def train_lstm(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
+    word_vocab_size = len(model.word_idx_mappings)
+    tag_vocab_size = len(model.pos_idx_mappings)
+
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+
+    if use_cuda:
+        model.cuda()
+
+    # Define the loss function as the Negative Log Likelihood loss (NLLLoss)
+    loss_function = nn.NLLLoss()
+
+    # We will be using a simple SGD optimizer to minimize the loss function
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    acumulate_grad_steps = 50  # This is the actual batch_size, while we officially use batch_size=1
+
+    # Training start
+    print("Training Started")
+    accuracy_list = []
+    loss_list = []
+    for epoch in range(epochs):
+        acc = 0  # to keep track of accuracy
+        printable_loss = 0  # To keep track of the loss value
+        i = 0
+        for batch_idx, input_data in enumerate(dataloader):
+            i += 1
+            words_idx_tensor, pos_idx_tensor, true_tree_heads = input_data
+
+            # TODO change from here
+            tag_scores = model(words_idx_tensor)
+            tag_scores = tag_scores.unsqueeze(0).permute(0, 2, 1)
+            # print("tag_scores shape -", tag_scores.shape)
+            # print("pos_idx_tensor shape -", pos_idx_tensor.shape)
+            loss = loss_function(tag_scores, pos_idx_tensor.to(device))
+            # כאילו צוברים את הדרגיאנטים
+            loss = loss / acumulate_grad_steps
+            loss.backward()
+
+            # במשך 50 צעדים צברנו גרדיאנטים מנורמלים ואז אנחנו רק עושים את הצעד
+            if i % acumulate_grad_steps == 0:
+                optimizer.step()
+                # כדי שפעם הבאה שנעשה בקוורד זה יתווסף ל0 ולא למה שהיה לנו פה
+                model.zero_grad()
+            printable_loss += loss.item()
+            #
+            _, indices = torch.max(tag_scores, 1)
+            # print("tag_scores shape-", tag_scores.shape)
+            # print("indices shape-", indices.shape)
+            # acc += indices.eq(pos_idx_tensor.view_as(indices)).mean().item()
+            # הממוצע בפקודה הבאה חסר משמעות כי זה רק דגימה 1
+            acc += torch.mean(torch.tensor(pos_idx_tensor.to("cpu") == indices.to("cpu"), dtype=torch.float))
+        printable_loss = printable_loss / len(train)
+        # צריך להיות על כל האפוק של הטריין
+        acc = acc / len(train)
+        loss_list.append(float(printable_loss))
+        accuracy_list.append(float(acc))
+        # מחשב את ההצלחה על המבחן
+        test_acc = evaluate()
+        e_interval = i
+        print("Epoch {} Completed,\tLoss {}\tAccuracy: {}\t Test Accuracy: {}".format(epoch + 1,
+                                                                                      np.mean(loss_list[-e_interval:]),
+                                                                                      np.mean(
+                                                                                          accuracy_list[-e_interval:]),
+                                                                                      test_acc))
+
+        # עם עוד עבודה על פרמטרים וגם עבודה אלגוריתמית אפשר לשפר מאוד את המודל
+
+
 def main():
     path_train = "train.labeled"
+    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    pos_embd_dim = 25
+    hidden_dim = 125
+    epochs = 15
+
     word_dict, pos_dict = get_vocabs_counts([path_train])
-    train = PosDataset(word_dict, pos_dict, path_train, padding=False, word_embeddings=None)
-    train_dataloader = DataLoader(train, shuffle=True)
+    train = DependencyDataset(word_dict, pos_dict, path_train, word_embd_dim, pos_embd_dim,
+                              padding=False, use_pre_trained=True)
+    dataloader = DataLoader(train, shuffle=True)
+    model = KiperwasserDependencyParser(train, hidden_dim, use_pre_trained=True)
+
+    train_lstm(model, dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
 
     path_test = "test.labeled"
 
