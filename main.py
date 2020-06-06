@@ -250,7 +250,7 @@ class KiperwasserDependencyParser(nn.Module):
             self.word_embedding = dataset.word_vectors
 
         # Implement embedding layer for POS tags
-        self.pos_embedding = self.pos_embedding
+        self.pos_embedding = dataset.pos_vectors
 
         self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim
 
@@ -275,10 +275,17 @@ class KiperwasserDependencyParser(nn.Module):
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
 
         # Pass word_idx and pos_idx through their embedding layers
+        # [batch_size, seq_length, emb_dim]
+        word_embeddings = self.word_embedding(word_idx_tensor.to(self.device))
+        # [batch_size, seq_length, emb_dim]
+        pos_embeddings = self.pos_embedding(pos_idx_tensor.to(self.device))
 
         # Concat both embedding outputs
+        # combine both word_embeddings + pos_embeddings
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
+        # size = [seq_length, batch_size, 2*hidden_dim]
+        lstm_out, _ = self.encoder(word_embeddings.view(word_embeddings.shape[1], 1, -1))
 
         # Get score for each possible edge in the parsing graph, construct score matrix
 
