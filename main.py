@@ -115,7 +115,7 @@ class DataReader:
 
 class DependencyDataset(Dataset):
     def __init__(self, word_dict, pos_dict, path: str, word_embd_dim, pos_embd_dim,
-                 padding=False, use_pre_trained=True):
+                 padding=False, use_pre_trained=True, pre_trained_vectors_name: str = None):
         super().__init__()
         self.file = path
         self.datareader = DataReader(self.file, word_dict, pos_dict)
@@ -125,7 +125,7 @@ class DependencyDataset(Dataset):
         # בנוסף, אנחנו נצטרך לעשות וורד-אמבדינג גם לטאגס
         if use_pre_trained:  # pre-trained -- Download Glove
             self.word_idx_mappings, self.idx_word_mappings, self.pre_trained_word_vectors = \
-                self.init_word_embeddings(self.datareader.word_dict, word_embd_dim)
+                self.init_word_embeddings(self.datareader.word_dict, pre_trained_vectors_name)
 
         else:
             self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
@@ -161,10 +161,22 @@ class DependencyDataset(Dataset):
         return word_embed_idx, pos_embed_idx, sentence_len
 
     @staticmethod
-    def init_word_embeddings(word_dict, word_embd_dim):
-        if word_embd_dim not in [50, 100, 200, 300]:
-            raise ValueError("word_embd_dim should be one of [50, 100, 200, 300]")
-        glove = Vocab(Counter(word_dict), vectors=f"glove.6B.{word_embd_dim}d", specials=SPECIAL_TOKENS)
+    def init_word_embeddings(word_dict, vectors: str):
+        if vectors not in ['charngram.100d',
+                           'fasttext.en.300d',
+                           'fasttext.simple.300d',
+                           'glove.42B.300d',
+                           'glove.840B.300d',
+                           'glove.twitter.27B.25d',
+                           'glove.twitter.27B.50d',
+                           'glove.twitter.27B.100d',
+                           'glove.twitter.27B.200d',
+                           'glove.6B.50d',
+                           'glove.6B.100d',
+                           'glove.6B.200d',
+                           'glove.6B.300d']:
+            raise ValueError("pre-trained embedding vectors not found")
+        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -240,7 +252,8 @@ class DependencyDataset(Dataset):
 # בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
 # בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_dim, use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_dim,
+                 use_pre_trained=True):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM)
@@ -318,6 +331,9 @@ class KiperwasserDependencyParser(nn.Module):
                     h_m_concat = torch.cat((head_vector, modifier_vector))
                     MLP_score = self.edge_scorer(h_m_concat)
                     MLP_scores_mat[h][m] = MLP_score
+
+        # access weights
+        # self.edge_scorer[i].weight || i in [1, 2, 3]
 
         breakpoint()
         return MLP_scores_mat
@@ -421,13 +437,14 @@ def main():
     hidden_dim = 125
     MLP_dim = 500
     epochs = 15
-    use_pre_trained = False
+    use_pre_trained = True
+    vectors = 'glove.6B.300d' if use_pre_trained else ''
 
     """TRAIN DATA"""
     path_train = "train.labeled"
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
     train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
-                              padding=False, use_pre_trained=use_pre_trained)
+                              padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_dim, use_pre_trained=use_pre_trained)
 
