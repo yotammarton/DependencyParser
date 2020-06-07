@@ -113,24 +113,6 @@ class DataReader:
         return len(self.D)
 
 
-def init_pos_vocab(pos_dict):
-    """
-    :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
-    :return: index mapping for POS tags
-    """
-    # pay attention we changed this a little bit - if everything's ok delete this comment
-    idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
-    pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
-
-    for i, pos in enumerate(sorted(pos_dict.keys())):
-        # pos_idx_mappings[str(pos)] = int(i)
-        pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
-        idx_pos_mappings.append(str(pos))
-    print("idx_pos_mappings -", idx_pos_mappings)  # TODO DEL
-    print("pos_idx_mappings -", pos_idx_mappings)  # TODO DEL
-    return pos_idx_mappings, idx_pos_mappings
-
-
 class DependencyDataset(Dataset):
     def __init__(self, word_dict, pos_dict, path: str, word_embd_dim, pos_embd_dim,
                  padding=False, use_pre_trained=True):
@@ -152,7 +134,7 @@ class DependencyDataset(Dataset):
             self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
 
         # pos embeddings
-        self.pos_idx_mappings, self.idx_pos_mappings = init_pos_vocab(self.datareader.pos_dict)
+        self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
         # self.pos_vectors = nn.Embedding(pos_vocab_size, pos_embedding_dim)
         self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
 
@@ -188,8 +170,24 @@ class DependencyDataset(Dataset):
         return self.word_idx_mappings, self.idx_word_mappings, self.word_vectors
 
     # return idx mapping for POS tags
-    # idx_pos_mappings - ['<root>', '<unk>', '#', '$', ....]
     # pos_idx_mappings - {'<root>': 0, '<unk>': 1, '#': 2, '$': 3, ..... }
+    # idx_pos_mappings - ['<root>', '<unk>', '#', '$', ....]
+    def init_pos_vocab(self):
+        """
+        :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
+        :return: index mapping for POS tags
+        """
+        # pay attention we changed this a little bit - if everything's ok delete this comment
+        idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
+        pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
+
+        for i, pos in enumerate(sorted(self.datareader.pos_dict.keys())):
+            # pos_idx_mappings[str(pos)] = int(i)
+            pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
+            idx_pos_mappings.append(str(pos))
+        print("idx_pos_mappings -", idx_pos_mappings)  # TODO DEL
+        print("pos_idx_mappings -", pos_idx_mappings)  # TODO DEL
+        return pos_idx_mappings, idx_pos_mappings
 
     def get_pos_vocab(self):
         return self.pos_idx_mappings, self.idx_pos_mappings
