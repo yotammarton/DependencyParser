@@ -145,7 +145,8 @@ class DependencyDataset(Dataset):
 
         # עבור מילים שלא ראיתי - המודל שלי ידע להתייחס אליהן אבל אני לא מכיר אותן
         self.unknown_idx = self.word_idx_mappings.get(UNKNOWN_TOKEN)
-        self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained else self.word_vectors.size(-1)
+        self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained \
+            else self.word_vectors.embedding_dim
         # self.sentence_lens = [len(sentence) for sentence in self.datareader.sentences]
         # משפטים שארוכים מהאורך הזה ייחתכו
         # self.max_seq_len = max(self.sentence_lens)
@@ -318,6 +319,7 @@ class KiperwasserDependencyParser(nn.Module):
                     MLP_score = self.edge_scorer(h_m_concat)
                     MLP_scores_mat[h][m] = MLP_score
 
+        breakpoint()
         return MLP_scores_mat
 
 
@@ -419,7 +421,7 @@ def main():
     hidden_dim = 125
     MLP_dim = 500
     epochs = 15
-    use_pre_trained = True
+    use_pre_trained = False
 
     """TRAIN DATA"""
     path_train = "train.labeled"
