@@ -252,12 +252,12 @@ class DependencyDataset(Dataset):
 # בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
 # בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_dim,
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim,
                  use_pre_trained=True):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM)
-        :param MLP_dim: controls the matrix size W1 (MLP_dim x MLP_dim) and so that the length of W2 vector
+        :param MLP_inner_dim: controls the matrix size W1 (MLP_inner_dim x 500) and so that the length of W2 vector
         :param use_pre_trained: bool.
         """
         super(KiperwasserDependencyParser, self).__init__()
@@ -282,16 +282,16 @@ class KiperwasserDependencyParser(nn.Module):
 
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
         # MLP(x) = W2 * tanh(W1 * x + b1) + b2
-        # W1 - Matrix (MLP_dim x MLP_dim) || W2, b1 - Vectors (MLP_dim) || b2 - Scalar
+        # W1 - Matrix (MLP_inner_dim x 500) || W2, b1 - Vectors (MLP_inner_dim) || b2 - Scalar
         # https://www.kaggle.com/pinocookie/pytorch-simple-mlp
         # TODO possible change to (500, dim) , (dim, 1) - we can control the dimension
         self.edge_scorer = nn.Sequential(
             # W1 * x + b1
-            nn.Linear(500, MLP_dim),
+            nn.Linear(500, MLP_inner_dim),
             # tanh(W1 * x + b1)
             nn.Tanh(),
             # W2 * tanh(W1 * x + b1) + b2
-            nn.Linear(MLP_dim, 1)
+            nn.Linear(MLP_inner_dim, 1)
         )
 
     def forward(self, sample):
@@ -435,7 +435,7 @@ def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
-    MLP_dim = 500
+    MLP_inner_dim = 500
     epochs = 15
     use_pre_trained = True
     vectors = 'glove.6B.300d' if use_pre_trained else ''
@@ -446,7 +446,7 @@ def main():
     train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
                               padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_dim, use_pre_trained=use_pre_trained)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, use_pre_trained=use_pre_trained)
 
     """TRAIN THE PARSER ON TRAIN DATA"""
     train_parser(model, train_dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
