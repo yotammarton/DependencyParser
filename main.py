@@ -249,8 +249,9 @@ class DependencyDataset(Dataset):
                                                                      sentence_heads_list))}
 
 
-# בשלב האימון לא ממש צריך לייצר עצים, אפשר להסתכל ישירות על הלוס - בעצם מה המודל אמר שהוא חושב בכל שלב
-# בשלב ההסקה כן צריך ליצור עצים ואז לראות כמה המודל צדק על האבלואציה
+"""Basic Model"""
+
+
 class KiperwasserDependencyParser(nn.Module):
     def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim,
                  use_pre_trained=True):
@@ -299,19 +300,20 @@ class KiperwasserDependencyParser(nn.Module):
         original_sentence_in_words = [self.dataset.idx_word_mappings[w] for w in word_idx_tensor[0]]  # for our use
 
         # Pass word_idx and pos_idx through their embedding layers
-        # size = [batch_size, seq_length, emb_dim]
+        # size = [batch_size, seq_length, word_dim]
         word_embeddings = self.word_embedding(word_idx_tensor.to(self.device))
         # size = [batch_size, seq_length, pos_dim]
         pos_embeddings = self.pos_embedding(pos_idx_tensor.to(self.device))
 
         # Concat both embedding outputs: combine both word_embeddings + pos_embeddings
-        # size = [batch_size, seq_length, emb_dim + pos_dim]
+        # size = [batch_size, seq_length, word_dim + pos_dim]
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
         # TODO this looks weird to Yotam because its like processing n (len sentence) sentences of length 1
         # size = [seq_length, batch_size, 2*hidden_dim] -- Eyal
         # lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
+        # see more here: https://stackoverflow.com/questions/48705162/pytorch-tutorial-lstm
 
         # size = [batch_size, seq_length, 2*hidden_dim]
         lstm_out, _ = self.encoder(word_pos_embeddings)
@@ -339,26 +341,7 @@ class KiperwasserDependencyParser(nn.Module):
         return MLP_scores_mat
 
 
-def evaluate(model, dataloader):
-    # TODO verify, it was written in 00:00 AM dude
-    acc = 0
-    # להגיד למודל לא ללמוד כרגע
-    with torch.no_grad():
-        # דוגמים מהדאטא לאודר
-        for batch_idx, input_data in enumerate(dataloader):
-            MLP_scores_mat = model(input_data)
-            gold_heads = input_data[2]
-
-            # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
-            # [-1, 5, 6, 3, 0, 4, 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-            predicted_tree = decode_mst(MLP_scores_mat, length=MLP_scores_mat.shape[0], has_labels=False)
-
-            acc += sum(gold_heads.numpy() == predicted_tree[1:]) / len(gold_heads)
-        acc = acc / len(dataloader)
-    return acc
-
-
-def train_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
+def train_kiperwasser_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
     # if we want the next 2 lines we need the 'train' object from main() inside 'model' object
     # word_vocab_size = len(model.word_idx_mappings)
     # tag_vocab_size = len(model.pos_idx_mappings)
@@ -431,6 +414,36 @@ def train_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_d
         # TODO add graphs
 
 
+"""Advanced Model - GoldMart = Goldstein-Martin"""
+
+
+class GoldMartDependencyParser(nn.Module):
+    pass
+
+
+def train_goldmart_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
+    pass
+
+
+def evaluate(model, dataloader):
+    # TODO verify, it was written in 00:00 AM dude
+    acc = 0
+    # להגיד למודל לא ללמוד כרגע
+    with torch.no_grad():
+        # דוגמים מהדאטא לאודר
+        for batch_idx, input_data in enumerate(dataloader):
+            MLP_scores_mat = model(input_data)
+            gold_heads = input_data[2]
+
+            # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
+            # [-1, 5, 6, 3, 0, 4, 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+            predicted_tree = decode_mst(MLP_scores_mat, length=MLP_scores_mat.shape[0], has_labels=False)[0]
+
+            acc += sum(gold_heads.numpy() == predicted_tree[1:]) / len(gold_heads)
+        acc = acc / len(dataloader)
+    return acc
+
+
 def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
@@ -449,7 +462,7 @@ def main():
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, use_pre_trained=use_pre_trained)
 
     """TRAIN THE PARSER ON TRAIN DATA"""
-    train_parser(model, train_dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
+    train_kiperwasser_parser(model, train_dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
 
     """TEST DATA"""
     path_test = "test.labeled"
