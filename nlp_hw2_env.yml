@@ -1,4 +1,4 @@
-name: null
+name: nlp_hw2
 channels:
   - pytorch
   - defaults
