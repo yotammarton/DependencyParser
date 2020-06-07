@@ -364,6 +364,7 @@ def train_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_d
     print("Training Started")
     accuracy_list = []
     loss_list = []
+    model.zero_grad()
     for epoch in range(epochs):
         acc = 0  # to keep track of accuracy
         printable_loss = 0  # To keep track of the loss value
