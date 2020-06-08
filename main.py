@@ -24,8 +24,8 @@ import os
 from chu_liu_edmonds import decode_mst
 
 # Constants
-ROOT_TOKEN = "<root>"
-UNKNOWN_TOKEN = "<unk>"
+ROOT_TOKEN = "<root>"  # TODO GAL this is root pos or root word?
+UNKNOWN_TOKEN = "<unk>"  # TODO GAL according to the forum, its represents unknown POS?
 SPECIAL_TOKENS = [ROOT_TOKEN, UNKNOWN_TOKEN]
 
 
@@ -53,7 +53,7 @@ def get_vocabs_counts(list_of_paths):
 
 
 # returns {'The': 0, 'I': 1, 'Boeing': 2....}, {'DT': 0, 'NNP': 1, 'VBG': 2....}
-def create_idx_dicts(word_dict, pos_dict):
+def create_idx_dicts(word_dict, pos_dict):  # TODO GAL maybe sparate to pos and words, because we will call the POS function in both cases of embeddings
     """
     create dictionary with index to each word. also dictionary with index to each pos.
     we should call this function only if we create embedding vectors by ourselves.
@@ -86,12 +86,12 @@ class DataReader:
     def __readData__(self):
         """main reader function which also populates the class data structures"""
         with open(self.file) as f:
-            sentence, tags, heads = [ROOT_TOKEN], [UNKNOWN_TOKEN], []
+            sentence, tags, heads = [ROOT_TOKEN], [ROOT_TOKEN], []
             for line in f:
                 if line == "\n":
                     if heads:
                         self.D.append((sentence, tags, heads))
-                    sentence, tags, heads = [ROOT_TOKEN], [UNKNOWN_TOKEN], []
+                    sentence, tags, heads = [ROOT_TOKEN], [ROOT_TOKEN], []
                 else:
                     splited_values = re.split('\t', line)
                     # m = int(splited_values[0])
@@ -105,7 +105,7 @@ class DataReader:
 
                     # e.g.
                     # ['<root>', 'It', 'has', 'no', 'bearing', 'on', 'our', 'work', 'force', 'today', '.'] len = 11
-                    # ['<unk>', 'PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']             len = 11
+                    # ['<root>', 'PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']             len = 11
                     # ['2', '0', '4', '2', '4', '8', '8', '5', '8', '2']                                   len = 10
 
     def get_num_sentences(self):
@@ -131,7 +131,7 @@ class DependencyDataset(Dataset):
             self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
             self.idx_word_mappings = list(self.word_idx_mappings.keys())
             # self.word_embedding = nn.Embedding(word_vocab_size, word_embedding_dim)
-            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
+            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)  # TODO GAL its attribute that doesn't init to nothing if we are with pretrained, maybe change the name?
 
         # pos embeddings
         self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
@@ -145,8 +145,9 @@ class DependencyDataset(Dataset):
 
         # עבור מילים שלא ראיתי - המודל שלי ידע להתייחס אליהן אבל אני לא מכיר אותן
         self.unknown_idx = self.word_idx_mappings.get(UNKNOWN_TOKEN)
+        # TODO index -1 will always be index 1? because it always be 2 dimensional?
         self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained \
-            else self.word_vectors.embedding_dim
+            else self.word_vectors.embedding_dim  # TODO GAL this is attribute of nn.embedding function
         # self.sentence_lens = [len(sentence) for sentence in self.datareader.sentences]
         # משפטים שארוכים מהאורך הזה ייחתכו
         # self.max_seq_len = max(self.sentence_lens)
@@ -176,7 +177,7 @@ class DependencyDataset(Dataset):
                            'glove.6B.200d',
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
-        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)
+        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)  # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -233,6 +234,8 @@ class DependencyDataset(Dataset):
             #     while len(words_idx_list) < self.max_seq_len:
             #         words_idx_list.append(self.word_idx_mappings.get(PAD_TOKEN))
             #         pos_idx_list.append(self.pos_idx_mappings.get(PAD_TOKEN))
+
+            # we don't want to activate grads for the indexes because these are not parameters
             sentence_word_idx_list.append(torch.tensor(words_idx_list, dtype=torch.long, requires_grad=False))
             sentence_pos_idx_list.append(torch.tensor(pos_idx_list, dtype=torch.long, requires_grad=False))
             sentence_heads_list.append(torch.tensor(heads, dtype=torch.int, requires_grad=False))
@@ -244,7 +247,7 @@ class DependencyDataset(Dataset):
         #     all_sentence_len = torch.tensor(sentence_len_list, dtype=torch.long, requires_grad=False)
         #     return TensorDataset(all_sentence_word_idx, all_sentence_pos_idx, all_sentence_len)
 
-        return {i: sample_tuple for i, sample_tuple in enumerate(zip(sentence_word_idx_list,
+        return {i: sample_tuple for i, sample_tuple in enumerate(zip(sentence_word_idx_list,  # its just indexes. next phase will be convert it to embeddings
                                                                      sentence_pos_idx_list,
                                                                      sentence_heads_list))}
 
@@ -257,7 +260,7 @@ class KiperwasserDependencyParser(nn.Module):
                  use_pre_trained=True):
         """
         :param dataset: dataset for training
-        :param hidden_dim: size of hidden dim (output of LSTM)
+        :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
         :param MLP_inner_dim: controls the matrix size W1 (MLP_inner_dim x 500) and so that the length of W2 vector
         :param use_pre_trained: bool.
         """
@@ -268,14 +271,14 @@ class KiperwasserDependencyParser(nn.Module):
         # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
         if use_pre_trained:  # use pre trained vectors
             # משתמשים בפרי-טריינד, פרייז=פאלס אומר שאנחנו נאמן את המשקולות בעצמנו גם
-            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
+            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)  # this is not matrix of embeddings. its function that gets indexes and return embeddings
         else:
             self.word_embedding = dataset.word_vectors
 
         # Implement embedding layer for POS tags
         self.pos_embedding = dataset.pos_vectors
 
-        self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim
+        self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim  # input for LSTM
 
         # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
         self.encoder = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim,
@@ -295,9 +298,9 @@ class KiperwasserDependencyParser(nn.Module):
             nn.Linear(MLP_inner_dim, 1)
         )
 
-    def forward(self, sample):
+    def forward(self, sample):  # this is required function. can't change its name
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
-        original_sentence_in_words = [self.dataset.idx_word_mappings[w] for w in word_idx_tensor[0]]  # for our use
+        original_sentence_in_words = [self.dataset.idx_word_mappings[w] for w in word_idx_tensor[0]]  # for our use  # TODO GAL what is index 0? w is confusing because its index and not word
 
         # Pass word_idx and pos_idx through their embedding layers
         # size = [batch_size, seq_length, word_dim]
@@ -315,8 +318,8 @@ class KiperwasserDependencyParser(nn.Module):
         # lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
         # see more here: https://stackoverflow.com/questions/48705162/pytorch-tutorial-lstm
 
-        # size = [batch_size, seq_length, 2*hidden_dim]
-        lstm_out, _ = self.encoder(word_pos_embeddings)
+        # size of output = [batch_size, seq_length, 2*hidden_dim]
+        lstm_out, _ = self.encoder(word_pos_embeddings)  # encoder wants to get tensor. it is not defined in our code but thats how NN works
 
         # Get score for each possible edge in the parsing graph, construct score matrix
         n = lstm_out.shape[1]  # TODO change if we change the lstm_out line (5 lines before)
@@ -370,7 +373,7 @@ def train_kiperwasser_parser(model, dataloader, epochs, word_emb_dim, pos_embd_d
         i = 0
         for batch_idx, input_data in enumerate(dataloader):
             i += 1
-            MLP_scores_mat = model(input_data)
+            MLP_scores_mat = model(input_data)  # forward activated inside
 
             # TODO change from here down
 
