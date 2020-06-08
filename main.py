@@ -156,8 +156,8 @@ class DependencyDataset(Dataset):
                            'glove.6B.200d',
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
-        glove = Vocab(Counter(word_dict), vectors=vectors,
-                      specials=SPECIAL_TOKENS)  # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
+        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)
+        # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -212,15 +212,17 @@ class DependencyDataset(Dataset):
 
 
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout=0.0, use_pre_trained=True):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
         :param MLP_inner_dim: controls the matrix size W1 (MLP_inner_dim x 500) and so that the length of W2 vector
+        :param dropout:
         :param use_pre_trained: bool.
         """
         super(KiperwasserDependencyParser, self).__init__()
         self.dataset = dataset
+        self.dropout_p = dropout
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Implement embedding layer for words (can be new or pertained - word2vec/glove)
@@ -235,6 +237,10 @@ class KiperwasserDependencyParser(nn.Module):
 
         self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim  # input for LSTM
 
+        # Dropout layer
+        if dropout:
+            self.dropout = nn.Dropout(p=dropout)
+
         # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
         self.encoder = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim,
                                num_layers=1, bidirectional=True, batch_first=True)
@@ -242,7 +248,6 @@ class KiperwasserDependencyParser(nn.Module):
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
         # MLP(x) = W2 * tanh(W1 * x + b1) + b2
         # W1 - Matrix (MLP_inner_dim x 500) || W2, b1 - Vectors (MLP_inner_dim) || b2 - Scalar
-        # https://www.kaggle.com/pinocookie/pytorch-simple-mlp
         # TODO possible change to (500, dim) , (dim, 1) - we can control the dimension
         self.edge_scorer = nn.Sequential(
             # W1 * x + b1
@@ -270,6 +275,10 @@ class KiperwasserDependencyParser(nn.Module):
         # Concat both embedding outputs: combine both word_embeddings + pos_embeddings
         # size = [batch_size, seq_length, word_dim + pos_dim]
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
+
+        # Dropout
+        if self.dropout_p:
+            word_pos_embeddings = self.dropout(word_pos_embeddings)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
         # size  = [batch_size, seq_length, 2*hidden_dim]
@@ -386,7 +395,7 @@ class GoldMartDependencyParser(nn.Module):
     pass
 
 
-def train_goldmart_parser(model, train_dataloader, test_dataloader, epochs, learning_rate):
+def train_goldmart_parser():
     pass
 
 
@@ -432,12 +441,13 @@ def main():
     MLP_inner_dim = 500
     epochs = 15
     learning_rate = 0.01
+    dropout = 0.3
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
     path_test = "test.labeled"
 
-    run_description = f"first run for the KiperwasserDependencyParser\n" \
+    run_description = f"first run for the KiperwasserDependencyParser + Dropout\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
                       f"word_embd_dim = {word_embd_dim}\n" \
                       f"pos_embd_dim = {pos_embd_dim}\n" \
@@ -445,6 +455,7 @@ def main():
                       f"MLP_inner_dim = {MLP_inner_dim}\n" \
                       f"epochs = {epochs}\n" \
                       f"learning_rate = {learning_rate}\n" \
+                      f"dropout = {dropout}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
                       f"path_train = {path_train}\n" \
@@ -461,7 +472,7 @@ def main():
     train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
                               padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, use_pre_trained=use_pre_trained)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout, use_pre_trained=use_pre_trained)
 
     """TEST DATA"""
     test_word_dict, test_pos_dict = get_vocabs_counts([path_test])
