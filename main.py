@@ -1,23 +1,16 @@
 from torchtext.vocab import Vocab
 from torch.utils.data.dataset import Dataset, TensorDataset
-from pathlib import Path
 from collections import Counter
 from collections import defaultdict
-import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import random
 from torch.utils.data.dataloader import DataLoader
-from collections import OrderedDict
 import re
-from scipy import optimize
 import pickle
-import scipy.special as special
 import matplotlib.pyplot as plt
-from matplotlib import colors
 import seaborn as sns
 import time
 import os
@@ -42,8 +35,6 @@ def get_vocabs_counts(list_of_paths):
             for line in f:
                 if line != "\n":
                     splited_values = re.split('\t', line)
-                    # m = int(splited_values[0])
-                    # h = int(splited_values[6])
                     word = splited_values[1]
                     pos = splited_values[3]
 
@@ -53,7 +44,8 @@ def get_vocabs_counts(list_of_paths):
 
 
 # returns {'The': 0, 'I': 1, 'Boeing': 2....}, {'DT': 0, 'NNP': 1, 'VBG': 2....}
-def create_idx_dicts(word_dict, pos_dict):  # TODO GAL maybe sparate to pos and words, because we will call the POS function in both cases of embeddings
+def create_idx_dicts(word_dict, pos_dict):
+    # TODO GAL maybe sparate to pos and words, because we will call the POS function in both cases of embeddings
     """
     create dictionary with index to each word. also dictionary with index to each pos.
     we should call this function only if we create embedding vectors by ourselves.
@@ -120,10 +112,7 @@ class DependencyDataset(Dataset):
         self.file = path
         self.datareader = DataReader(self.file, word_dict, pos_dict)
         self.vocab_size = len(self.datareader.word_dict)
-        # בחלק הזה הוא מסביר על זה שבדוגמא פה הוא עושה שימוש בגלוב עבור האמבדינג
-        # ניתן לשפר את המשקולות שלו לדאטא סט שלנו ולא בהכרח להישאר עם המשקולות הקבועות
-        # בנוסף, אנחנו נצטרך לעשות וורד-אמבדינג גם לטאגס
-        if use_pre_trained:  # pre-trained -- Download Glove
+        if use_pre_trained:  # pre-trained word embeddings
             self.word_idx_mappings, self.idx_word_mappings, self.pre_trained_word_vectors = \
                 self.init_word_embeddings(self.datareader.word_dict, pre_trained_vectors_name)
 
@@ -131,28 +120,18 @@ class DependencyDataset(Dataset):
             self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
             self.idx_word_mappings = list(self.word_idx_mappings.keys())
             # self.word_embedding = nn.Embedding(word_vocab_size, word_embedding_dim)
-            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)  # TODO GAL its attribute that doesn't init to nothing if we are with pretrained, maybe change the name?
+            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
+            # TODO GAL its attribute that doesn't init to nothing if we are with pertained, maybe change the name?
 
         # pos embeddings
         self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
-        # self.pos_vectors = nn.Embedding(pos_vocab_size, pos_embedding_dim)
         self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
 
-        # במודל הזה אנחנו לא נעשה באטצ'ינג ואנחנו לא נעשה את הריפוד
-        # נעשה משהו שקול לעבודה עם באטצ'ים עלידי איזשהו טריק
-        # אבל בלי שימוש בבאטצ'ים באמת
-        # self.pad_idx = self.word_idx_mappings.get(PAD_TOKEN)
-
-        # עבור מילים שלא ראיתי - המודל שלי ידע להתייחס אליהן אבל אני לא מכיר אותן
         self.unknown_idx = self.word_idx_mappings.get(UNKNOWN_TOKEN)
         # TODO index -1 will always be index 1? because it always be 2 dimensional?
         self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained \
             else self.word_vectors.embedding_dim  # TODO GAL this is attribute of nn.embedding function
-        # self.sentence_lens = [len(sentence) for sentence in self.datareader.sentences]
-        # משפטים שארוכים מהאורך הזה ייחתכו
-        # self.max_seq_len = max(self.sentence_lens)
-        # ממיר את המשפטים לדאטאסט - פונקציה חשובה
-        self.sentences_dataset = self.convert_sentences_to_dataset(padding)
+        self.sentences_dataset = self.convert_sentences_to_dataset()
 
     def __len__(self):
         return len(self.sentences_dataset)
@@ -177,7 +156,8 @@ class DependencyDataset(Dataset):
                            'glove.6B.200d',
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
-        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)  # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
+        glove = Vocab(Counter(word_dict), vectors=vectors,
+                      specials=SPECIAL_TOKENS)  # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -191,7 +171,6 @@ class DependencyDataset(Dataset):
         :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
         :return: index mapping for POS tags
         """
-        # pay attention we changed this a little bit - if everything's ok delete this comment
         idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
         pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
 
@@ -199,65 +178,41 @@ class DependencyDataset(Dataset):
             # pos_idx_mappings[str(pos)] = int(i)
             pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
             idx_pos_mappings.append(str(pos))
-        print("idx_pos_mappings -", idx_pos_mappings)  # TODO DEL
-        print("pos_idx_mappings -", pos_idx_mappings)  # TODO DEL
         return pos_idx_mappings, idx_pos_mappings
 
     def get_pos_vocab(self):
         return self.pos_idx_mappings, self.idx_pos_mappings
 
-    def convert_sentences_to_dataset(self, padding):
+    def convert_sentences_to_dataset(self):
         """
         returns a dictionary that contains all the input train sample
-        :param padding: determine if we want padding to batch or not
         :return: dictionary as described
         """
-        # מחזירה מילון שמכיל דוגמאות של אינפוט ,לייבל וגודל הבאטצ' -
-        # מי שלא יעבוד עם באטצ' לא צריך את האחרון מביניהם
         sentence_word_idx_list = list()
         sentence_pos_idx_list = list()
         sentence_heads_list = list()  # TODO should we index the heads somehow??
-        # sentence_len_list = list()
 
-        # sentence_len_list = list()
         for sample_idx, sample in enumerate(self.datareader.D):
             words, tags, heads = sample
             words_idx_list = [self.word_idx_mappings[word] for word in words]
             pos_idx_list = [self.pos_idx_mappings[tag] for tag in tags]
 
-            # for word, pos in zip:
-            #     words_idx_list.append(self.word_idx_mappings.get(word))
-            #     pos_idx_list.append(self.pos_idx_mappings.get(pos))
-            # sentence_len = len(words_idx_list)
-
-            # if padding:
-            #     while len(words_idx_list) < self.max_seq_len:
-            #         words_idx_list.append(self.word_idx_mappings.get(PAD_TOKEN))
-            #         pos_idx_list.append(self.pos_idx_mappings.get(PAD_TOKEN))
-
             # we don't want to activate grads for the indexes because these are not parameters
             sentence_word_idx_list.append(torch.tensor(words_idx_list, dtype=torch.long, requires_grad=False))
             sentence_pos_idx_list.append(torch.tensor(pos_idx_list, dtype=torch.long, requires_grad=False))
-            sentence_heads_list.append(torch.tensor(heads, dtype=torch.int, requires_grad=False))
-            # sentence_len_list.append(sentence_len)
+            sentence_heads_list.append(torch.tensor(heads, dtype=torch.long, requires_grad=False))
 
-        # if padding:
-        #     all_sentence_word_idx = torch.tensor(sentence_word_idx_list, dtype=torch.long)
-        #     all_sentence_pos_idx = torch.tensor(sentence_pos_idx_list, dtype=torch.long)
-        #     all_sentence_len = torch.tensor(sentence_len_list, dtype=torch.long, requires_grad=False)
-        #     return TensorDataset(all_sentence_word_idx, all_sentence_pos_idx, all_sentence_len)
-
-        return {i: sample_tuple for i, sample_tuple in enumerate(zip(sentence_word_idx_list,  # its just indexes. next phase will be convert it to embeddings
-                                                                     sentence_pos_idx_list,
-                                                                     sentence_heads_list))}
+        return {i: sample_tuple for i, sample_tuple in
+                enumerate(zip(sentence_word_idx_list,  # its just indexes. next phase will be convert it to embeddings
+                              sentence_pos_idx_list,
+                              sentence_heads_list))}
 
 
 """Basic Model"""
 
 
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim,
-                 use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, use_pre_trained=True):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
@@ -268,10 +223,10 @@ class KiperwasserDependencyParser(nn.Module):
         self.dataset = dataset
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Implement embedding layer for words (can be new or pretrained - word2vec/glove)
+        # Implement embedding layer for words (can be new or pertained - word2vec/glove)
         if use_pre_trained:  # use pre trained vectors
-            # משתמשים בפרי-טריינד, פרייז=פאלס אומר שאנחנו נאמן את המשקולות בעצמנו גם
-            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)  # this is not matrix of embeddings. its function that gets indexes and return embeddings
+            # this is not matrix of embeddings. its function that gets indexes and return embeddings
+            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
         else:
             self.word_embedding = dataset.word_vectors
 
@@ -297,10 +252,14 @@ class KiperwasserDependencyParser(nn.Module):
             # W2 * tanh(W1 * x + b1) + b2
             nn.Linear(MLP_inner_dim, 1)
         )
+        # TODO DEL
+        # how to access weights:
+        # self.edge_scorer[i].weight || i in [1, 2, 3]
 
     def forward(self, sample):  # this is required function. can't change its name
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
-        original_sentence_in_words = [self.dataset.idx_word_mappings[w] for w in word_idx_tensor[0]]  # for our use  # TODO GAL what is index 0? w is confusing because its index and not word
+        original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
+        # TODO GAL what is index 0? w is confusing because its index and not word
 
         # Pass word_idx and pos_idx through their embedding layers
         # size = [batch_size, seq_length, word_dim]
@@ -313,41 +272,29 @@ class KiperwasserDependencyParser(nn.Module):
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
-        # TODO this looks weird to Yotam because its like processing n (len sentence) sentences of length 1
-        # size = [seq_length, batch_size, 2*hidden_dim] -- Eyal
-        # lstm_out, _ = self.encoder(word_pos_embeddings.view(word_pos_embeddings.shape[1], 1, -1))
-        # see more here: https://stackoverflow.com/questions/48705162/pytorch-tutorial-lstm
-
-        # size of output = [batch_size, seq_length, 2*hidden_dim]
-        lstm_out, _ = self.encoder(word_pos_embeddings)  # encoder wants to get tensor. it is not defined in our code but thats how NN works
+        # size  = [batch_size, seq_length, 2*hidden_dim]
+        # encoder wants to get tensor. it is not defined in our code but that's how NN works
+        lstm_out, _ = self.encoder(word_pos_embeddings)
 
         # Get score for each possible edge in the parsing graph, construct score matrix
-        n = lstm_out.shape[1]  # TODO change if we change the lstm_out line (5 lines before)
         # n = original sentence length + 1
-        MLP_scores_mat = np.full((n, n), -np.inf)  # head is rows, modifier is cols
-        # TODO come here if there's a problem with scores / weird shit (we used -np.inf)
-        for h in range(n):
-            for m in range(n):
-                if h == m or m == 0:
-                    continue
-                else:
-                    head_vector = lstm_out.data[0][h]  # 0 because the batch size = 1 always in our case
-                    modifier_vector = lstm_out.data[0][m]
-                    h_m_concat = torch.cat((head_vector, modifier_vector))
-                    MLP_score = self.edge_scorer(h_m_concat)
-                    MLP_scores_mat[h][m] = MLP_score
+        n = lstm_out.shape[1]
 
-        # access weights
-        # self.edge_scorer[i].weight || i in [1, 2, 3]
+        MLP_scores_mat = torch.zeros((n, n))  # modifiers are rows, heads are cols
+        for m in range(n):
+            modifier_vector = lstm_out.data[0][m]
+            for h in range(n):
+                head_vector = lstm_out.data[0][h]  # 0 because the batch size = 1 always in our case
+                h_m_concat = torch.cat((head_vector, modifier_vector))
+                MLP_score = self.edge_scorer(h_m_concat)
+                MLP_scores_mat[m][h] = MLP_score
 
-        breakpoint()
         return MLP_scores_mat
 
 
-def train_kiperwasser_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
-    # if we want the next 2 lines we need the 'train' object from main() inside 'model' object
-    # word_vocab_size = len(model.word_idx_mappings)
-    # tag_vocab_size = len(model.pos_idx_mappings)
+def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate):
+    start = time.time()
+    total_test_time = 0
 
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -356,65 +303,80 @@ def train_kiperwasser_parser(model, dataloader, epochs, word_emb_dim, pos_embd_d
         model.cuda()
 
     # Define the loss function as the Negative Log Likelihood loss (NLLLoss)
-    loss_function = nn.NLLLoss()  # TODO change
+    loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
 
     # We will be using a simple SGD optimizer to minimize the loss function
-    optimizer = optim.Adam(model.parameters(), lr=0.01)  # TODO optimize learning rate 'lr'
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)  # TODO optimize learning rate 'lr'
     acumulate_grad_steps = 50  # This is the actual batch_size, while we officially use batch_size=1
 
     # Training start
     print("Training Started")
-    accuracy_list = []
-    loss_list = []
+    train_accuracy_list, train_loss_list = [], []
+    test_accuracy_list, test_loss_list = [], []
+
     model.zero_grad()
     for epoch in range(epochs):
-        acc = 0  # to keep track of accuracy
-        printable_loss = 0  # To keep track of the loss value
-        i = 0
-        for batch_idx, input_data in enumerate(dataloader):
+        train_acc = 0  # to keep track of accuracy
+        train_loss = 0  # to keep track of the loss value
+        mst_trees_calculated = 0  # keep track of amount of trees calculated to plot the accuracy graph
+        i = 0  # keep track of samples processed
+        for batch_idx, input_data in enumerate(train_dataloader):
             i += 1
+            # size = [sentence_length + 1, sentence_length + 1]
             MLP_scores_mat = model(input_data)  # forward activated inside
 
-            # TODO change from here down
+            gold_heads = input_data[2]
 
-            # tag_scores = tag_scores.unsqueeze(0).permute(0, 2, 1)
-            # print("tag_scores shape -", tag_scores.shape)
-            # print("pos_idx_tensor shape -", pos_idx_tensor.shape)
-            loss = loss_function(tag_scores, pos_idx_tensor.to(device))
-            # כאילו צוברים את הדרגיאנטים
+            # concat -1 to true heads, we ignore this target value of -1
+            target = torch.cat((torch.tensor([-1]), gold_heads[0]))
+
+            # calculate negative log likelihood loss
+            # log softmax over the rows (modifiers in rows)
+            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
             loss = loss / acumulate_grad_steps
             loss.backward()
+            train_loss += loss.item()
 
-            # במשך 50 צעדים צברנו גרדיאנטים מנורמלים ואז אנחנו רק עושים את הצעד
-            if i % acumulate_grad_steps == 0:
+            # calculated sampled tress - only for accuracy calculations during train
+            if i % (acumulate_grad_steps / 2) == 0:
+                # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+                predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
+                                            has_labels=False)[0]
+
+                train_acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
+                mst_trees_calculated += 1
+
+            # perform optimization step
+            if i % acumulate_grad_steps == 0 or i == len(train_dataloader):
                 optimizer.step()
-                # כדי שפעם הבאה שנעשה בקוורד זה יתווסף ל0 ולא למה שהיה לנו פה
                 model.zero_grad()
-            printable_loss += loss.item()
-            #
-            _, indices = torch.max(tag_scores, 1)
-            # print("tag_scores shape-", tag_scores.shape)
-            # print("indices shape-", indices.shape)
-            # acc += indices.eq(pos_idx_tensor.view_as(indices)).mean().item()
-            # הממוצע בפקודה הבאה חסר משמעות כי זה רק דגימה 1
-            acc += torch.mean(torch.tensor(pos_idx_tensor.to("cpu") == indices.to("cpu"), dtype=torch.float))
-        printable_loss = printable_loss / len(train)
-        # צריך להיות על כל האפוק של הטריין
-        acc = acc / len(train)
-        loss_list.append(float(printable_loss))
-        accuracy_list.append(float(acc))
-        # מחשב את ההצלחה על המבחן
-        # TODO pass params to evaluate()
-        test_acc = evaluate()
-        e_interval = i
-        print("Epoch {} Completed,\tLoss {}\tAccuracy: {}\t Test Accuracy: {}".format(epoch + 1,
-                                                                                      np.mean(loss_list[-e_interval:]),
-                                                                                      np.mean(
-                                                                                          accuracy_list[-e_interval:]),
-                                                                                      test_acc))
 
-        # עם עוד עבודה על פרמטרים וגם עבודה אלגוריתמית אפשר לשפר מאוד את המודל
-        # TODO add graphs
+        train_loss = acumulate_grad_steps * train_loss / len(train_dataloader)
+        train_acc = train_acc / mst_trees_calculated
+        train_loss_list.append(train_loss)
+        train_accuracy_list.append(train_acc)
+
+        start_test_time = time.time()
+        # calculate test accuracy - TODO skip the next 3 lines if no need to know the test accuracy during training
+        test_acc, test_loss = evaluate(model, test_dataloader)
+        test_accuracy_list.append(test_acc)
+        test_loss_list.append(test_loss)
+        stop_test_time = time.time()
+        total_test_time += stop_test_time - start_test_time
+
+        print(f"Epoch {epoch + 1} Completed,\tTrain Loss {train_loss}\t Train Accuracy: {train_acc}\t "
+              f"Test Loss {test_loss}\t Test Accuracy: {test_acc}")
+
+        # print time for the end of epoch
+        print(f"Epoch {epoch + 1} Time "
+              f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))}")
+
+    stop = time.time()
+
+    total_train_time = stop - start - total_test_time
+
+    print(f'\n\n\ntotal_train_time = {int(total_train_time)} SECS \t total_test_time = {int(total_test_time)} SECS')
+    return train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list
 
 
 """Advanced Model - GoldMart = Goldstein-Martin"""
@@ -424,27 +386,43 @@ class GoldMartDependencyParser(nn.Module):
     pass
 
 
-def train_goldmart_parser(model, dataloader, epochs, word_emb_dim, pos_embd_dim, hidden_dim):
+def train_goldmart_parser(model, train_dataloader, test_dataloader, epochs, learning_rate):
     pass
 
 
 def evaluate(model, dataloader):
-    # TODO verify, it was written in 00:00 AM dude
     acc = 0
-    # להגיד למודל לא ללמוד כרגע
+    loss_value = 0
+
+    # tell the model not to learn
     with torch.no_grad():
-        # דוגמים מהדאטא לאודר
+        loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
         for batch_idx, input_data in enumerate(dataloader):
             MLP_scores_mat = model(input_data)
             gold_heads = input_data[2]
 
-            # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
-            # [-1, 5, 6, 3, 0, 4, 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-            predicted_tree = decode_mst(MLP_scores_mat, length=MLP_scores_mat.shape[0], has_labels=False)[0]
+            # concat -1 to true heads, we ignore this target value of -1
+            target = torch.cat((torch.tensor([-1]), gold_heads[0]))
 
-            acc += sum(gold_heads.numpy() == predicted_tree[1:]) / len(gold_heads)
+            # calculate negative log likelihood loss
+            # log softmax over the rows (modifiers in rows)
+            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
+            loss_value += loss.item()  # TODO change this to take only the value itself and not reference !!!!
+
+            # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
+            # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+            predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
+                                        has_labels=False)[0]
+
+            acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
         acc = acc / len(dataloader)
-    return acc
+        loss_value = loss_value / len(dataloader)
+
+    return acc, loss_value
+
+
+def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list):
+    pass
 
 
 def main():
@@ -453,30 +431,62 @@ def main():
     hidden_dim = 125
     MLP_inner_dim = 500
     epochs = 15
-    use_pre_trained = True
+    learning_rate = 0.01
+    use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
+    path_train = "train.labeled"
+    path_test = "test.labeled"
+
+    run_description = f"first run for the KiperwasserDependencyParser\n" \
+                      f"-------------------------------------------------------------------------------------------\n" \
+                      f"word_embd_dim = {word_embd_dim}\n" \
+                      f"pos_embd_dim = {pos_embd_dim}\n" \
+                      f"hidden_dim = {hidden_dim}\n" \
+                      f"MLP_inner_dim = {MLP_inner_dim}\n" \
+                      f"epochs = {epochs}\n" \
+                      f"learning_rate = {learning_rate}\n" \
+                      f"use_pre_trained = {use_pre_trained}\n" \
+                      f"vectors = {vectors}\n" \
+                      f"path_train = {path_train}\n" \
+                      f"path_test = {path_test}\n"
+
+    current_machine_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))
+    print(f"{current_machine_date_time}\n"
+          f"{run_description}")
+
+    path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
 
     """TRAIN DATA"""
-    path_train = "train.labeled"
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
     train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
                               padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, use_pre_trained=use_pre_trained)
 
-    """TRAIN THE PARSER ON TRAIN DATA"""
-    train_kiperwasser_parser(model, train_dataloader, epochs, word_embd_dim, pos_embd_dim, hidden_dim)
-
     """TEST DATA"""
-    path_test = "test.labeled"
     test_word_dict, test_pos_dict = get_vocabs_counts([path_test])
 
     test = DependencyDataset(test_word_dict, test_pos_dict, path_test, word_embd_dim, pos_embd_dim,
-                             padding=False, use_pre_trained=use_pre_trained)
+                             padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     test_dataloader = DataLoader(test, shuffle=False)
 
-    """EVALUATE ON TEST DATA"""
-    evaluate(model, test_dataloader)
+    """TRAIN THE PARSER ON TRAIN DATA"""
+    train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
+        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate)
+
+    print(f'\ntrain_accuracy_list = {train_accuracy_list}'
+          f'\ntrain_loss_list = {train_loss_list}'
+          f'\ntest_accuracy_list = {test_accuracy_list}'
+          f'\ntest_loss_list = {test_loss_list}')
+
+    """SAVE MODEL"""
+    torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
+
+    """PLOT GRAPHS"""
+    # plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list)
+
+    # """EVALUATE ON TEST DATA"""
+    # evaluate(model, test_dataloader)
 
 
 if __name__ == "__main__":
