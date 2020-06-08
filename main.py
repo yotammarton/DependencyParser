@@ -441,7 +441,7 @@ def main():
     MLP_inner_dim = 500
     epochs = 15
     learning_rate = 0.01
-    dropout = 0.3
+    dropout = 0.0
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
