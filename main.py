@@ -261,7 +261,8 @@ class KiperwasserDependencyParser(nn.Module):
         # how to access weights:
         # self.edge_scorer[i].weight || i in [1, 2, 3]
 
-    def forward(self, sample):  # this is required function. can't change its name
+    def forward(self, sample, dropout):  # this is required function. can't change its name
+        # TODO maybe add 'dropout' parameter so we will only dropout for train and not for test
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
         original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
         # TODO GAL what is index 0? w is confusing because its index and not word
@@ -277,7 +278,9 @@ class KiperwasserDependencyParser(nn.Module):
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
 
         # Dropout
-        if self.dropout_p:
+        # 1. first condition - if added dropout to init
+        # 2. second condition - specify if we wish to make dropout in this current forward pass (depends if train/test)
+        if self.dropout_p and dropout:
             word_pos_embeddings = self.dropout(word_pos_embeddings)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
@@ -301,7 +304,7 @@ class KiperwasserDependencyParser(nn.Module):
         return MLP_scores_mat
 
 
-def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate):
+def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay):
     start = time.time()
     total_test_time = 0
 
@@ -315,7 +318,8 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
     loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
 
     # We will be using a simple SGD optimizer to minimize the loss function
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)  # TODO optimize learning rate 'lr'
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    # TODO optimize learning rate 'lr'
     acumulate_grad_steps = 50  # This is the actual batch_size, while we officially use batch_size=1
 
     # Training start
@@ -332,7 +336,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         for batch_idx, input_data in enumerate(train_dataloader):
             i += 1
             # size = [sentence_length + 1, sentence_length + 1]
-            MLP_scores_mat = model(input_data)  # forward activated inside
+            MLP_scores_mat = model(input_data, dropout=True)  # forward activated inside
 
             gold_heads = input_data[2]
 
@@ -407,7 +411,7 @@ def evaluate(model, dataloader):
     with torch.no_grad():
         loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
         for batch_idx, input_data in enumerate(dataloader):
-            MLP_scores_mat = model(input_data)
+            MLP_scores_mat = model(input_data, dropout=False)
             gold_heads = input_data[2]
 
             # concat -1 to true heads, we ignore this target value of -1
@@ -438,16 +442,17 @@ def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
-    MLP_inner_dim = 500
+    MLP_inner_dim = 100
     epochs = 15
     learning_rate = 0.01
-    dropout = 0.0
+    dropout = 0.3
+    weight_decay = 0.7
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
-    path_train = "train.labeled"
-    path_test = "test.labeled"
+    path_train = "mini_train.labeled"
+    path_test = "mini_test.labeled"
 
-    run_description = f"first run for the KiperwasserDependencyParser + Dropout\n" \
+    run_description = f"first run for the KiperwasserDependencyParser + Dropout (train only) + Weight Decay\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
                       f"word_embd_dim = {word_embd_dim}\n" \
                       f"pos_embd_dim = {pos_embd_dim}\n" \
@@ -456,6 +461,7 @@ def main():
                       f"epochs = {epochs}\n" \
                       f"learning_rate = {learning_rate}\n" \
                       f"dropout = {dropout}\n" \
+                      f"weight_decay = {weight_decay}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
                       f"path_train = {path_train}\n" \
@@ -483,7 +489,7 @@ def main():
 
     """TRAIN THE PARSER ON TRAIN DATA"""
     train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
-        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate)
+        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay)
 
     print(f'\ntrain_accuracy_list = {train_accuracy_list}'
           f'\ntrain_loss_list = {train_loss_list}'
