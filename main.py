@@ -229,17 +229,17 @@ class DependencyDataset(Dataset):
 
 
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout=0.0, use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout_layers=0.0, use_pre_trained=True):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
         :param MLP_inner_dim: controls the matrix size W1 (MLP_inner_dim x 500) and so that the length of W2 vector
-        :param dropout:
+        :param dropout_layers: in between layers (doc: https://pytorch.org/docs/master/generated/torch.nn.LSTM.html)
         :param use_pre_trained: bool.
         """
         super(KiperwasserDependencyParser, self).__init__()
         self.dataset = dataset
-        self.dropout_p = dropout
+        self.dropout_layers_p = dropout_layers
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Implement embedding layer for words (can be new or pertained - word2vec/glove)
@@ -254,13 +254,9 @@ class KiperwasserDependencyParser(nn.Module):
 
         self.input_dim = self.word_embedding.embedding_dim + self.pos_embedding.embedding_dim  # input for LSTM
 
-        # Dropout layer
-        if dropout:
-            self.dropout = nn.Dropout(p=dropout)
-
         # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
         self.encoder = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim,
-                               num_layers=1, bidirectional=True, batch_first=True)
+                               num_layers=2, dropout=dropout_layers, bidirectional=True, batch_first=True)
 
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
         # MLP(x) = W2 * tanh(W1 * x + b1) + b2
@@ -268,7 +264,7 @@ class KiperwasserDependencyParser(nn.Module):
         # TODO possible change to (500, dim) , (dim, 1) - we can control the dimension
         self.edge_scorer = nn.Sequential(
             # W1 * x + b1
-            nn.Linear(500, MLP_inner_dim),
+            nn.Linear(4 * hidden_dim, MLP_inner_dim),
             # tanh(W1 * x + b1)
             nn.Tanh(),
             # W2 * tanh(W1 * x + b1) + b2
@@ -278,11 +274,11 @@ class KiperwasserDependencyParser(nn.Module):
         # how to access weights:
         # self.edge_scorer[i].weight || i in [1, 2, 3]
 
-    def forward(self, sample, dropout):  # this is required function. can't change its name
-        # TODO added 'dropout' parameter so we will only dropout for train and not for test
+    def forward(self, sample):  # this is required function. can't change its name
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
         original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
-        # TODO GAL what is index 0? w is confusing because its index and not word
+
+        # TODO implement word-dropout like in the article. and later also embedding dropout like they suggest with p=0.5
 
         # Pass word_idx and pos_idx through their embedding layers
         # size = [batch_size, seq_length, word_dim]
@@ -293,12 +289,6 @@ class KiperwasserDependencyParser(nn.Module):
         # Concat both embedding outputs: combine both word_embeddings + pos_embeddings
         # size = [batch_size, seq_length, word_dim + pos_dim]
         word_pos_embeddings = torch.cat((word_embeddings, pos_embeddings), dim=2)
-
-        # Dropout
-        # 1. first condition - if added dropout to init
-        # 2. second condition - specify if we wish to make dropout in this current forward pass (depends if train/test)
-        if self.dropout_p and dropout:
-            word_pos_embeddings = self.dropout(word_pos_embeddings)
 
         # Get Bi-LSTM hidden representation for each word+pos in sentence
         # size  = [batch_size, seq_length, 2*hidden_dim]
@@ -353,7 +343,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         for batch_idx, input_data in enumerate(train_dataloader):
             i += 1
             # size = [sentence_length + 1, sentence_length + 1]
-            MLP_scores_mat = model(input_data, dropout=True)  # forward activated inside
+            MLP_scores_mat = model(input_data)  # forward activated inside
 
             gold_heads = input_data[2]
 
@@ -429,7 +419,7 @@ def evaluate(model, dataloader):
     with torch.no_grad():
         loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
         for batch_idx, input_data in enumerate(dataloader):
-            MLP_scores_mat = model(input_data, dropout=False)
+            MLP_scores_mat = model(input_data)
             gold_heads = input_data[2]
 
             # concat -1 to true heads, we ignore this target value of -1
@@ -457,15 +447,15 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    word_embd_dim = 300  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
-    hidden_dim = 125  # TODO that's what we are asked for by the article?
+    hidden_dim = 125
     MLP_inner_dim = 500
-    epochs = 15
+    epochs = 30
     learning_rate = 0.01
-    dropout = 0.0
+    dropout_layers_probability = 0.0
     weight_decay = 0.0
-    use_pre_trained = True
+    use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
     path_test = "test.labeled"
@@ -478,7 +468,7 @@ def main():
                       f"MLP_inner_dim = {MLP_inner_dim}\n" \
                       f"epochs = {epochs}\n" \
                       f"learning_rate = {learning_rate}\n" \
-                      f"dropout = {dropout}\n" \
+                      f"dropout_layers_probability = {dropout_layers_probability}\n" \
                       f"weight_decay = {weight_decay}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
@@ -496,7 +486,8 @@ def main():
     train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
                               padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout, use_pre_trained=use_pre_trained)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim,
+                                        dropout_layers_probability, use_pre_trained=use_pre_trained)
 
     """TEST DATA"""
     test_word_dict, test_pos_dict = get_vocabs_counts([path_test])
