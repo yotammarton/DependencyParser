@@ -95,7 +95,7 @@ class DataReader:
                     tags.append(pos)
                     heads.append(h)
 
-                    # e.g.
+                    # e.g.  # TODO GAL we have special embedding for root, and another one for unknown?
                     # ['<root>', 'It', 'has', 'no', 'bearing', 'on', 'our', 'work', 'force', 'today', '.'] len = 11
                     # ['<root>', 'PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']             len = 11
                     # ['2', '0', '4', '2', '4', '8', '8', '5', '8', '2']                                   len = 10
@@ -362,7 +362,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
             # calculate negative log likelihood loss
             # log softmax over the rows (modifiers in rows)
-            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
+            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)  # TODO GAL what about the dimensions? maybe the unsqueeze should be here?
             loss = loss / acumulate_grad_steps
             loss.backward()
             train_loss += loss.item()
