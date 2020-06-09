@@ -115,13 +115,27 @@ class DependencyDataset(Dataset):
         if use_pre_trained:  # pre-trained word embeddings
             self.word_idx_mappings, self.idx_word_mappings, self.pre_trained_word_vectors = \
                 self.init_word_embeddings(self.datareader.word_dict, pre_trained_vectors_name)
-
         else:
             self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
             self.idx_word_mappings = list(self.word_idx_mappings.keys())
             # self.word_embedding = nn.Embedding(word_vocab_size, word_embedding_dim)
             self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
             # TODO GAL its attribute that doesn't init to nothing if we are with pertained, maybe change the name?
+
+            # TODO YOTAM: Possible change to this 'else' statement:
+            # that's because:
+            # 1. now we can control the SPECIAL_TOKENS and add them also when having nn.Embedding
+            # 2. now we can control the min_freq
+            """
+            self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
+            self.idx_word_mappings = list(self.word_idx_mappings.keys())
+            words_embeddings_tensor = nn.Embedding(len(self.word_idx_mappings), word_embd_dim).weight.data
+            vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=0)
+            vocab.set_vectors(stoi=self.word_idx_mappings, vectors=words_embeddings_tensor, dim=word_embd_dim)
+            # take all 3 attributes like in the pre-trained part 
+            self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = \
+                vocab.stoi, vocab.itos, vocab.vectors
+            """
 
         # pos embeddings
         self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
@@ -156,8 +170,11 @@ class DependencyDataset(Dataset):
                            'glove.6B.200d',
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
-        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS)
+        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS, min_freq=0)
         # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
+        # TODO YOTAM: word_dict is already a counter so the Counter(word_dict) is the same dict with keys
+        #  and values but different object (not sure if necessary but we can leave it like that)
+        # TODO YOTAM I think we should make something similar if we train by ourselves
         return glove.stoi, glove.itos, glove.vectors
 
     def get_word_embeddings(self):
@@ -262,7 +279,7 @@ class KiperwasserDependencyParser(nn.Module):
         # self.edge_scorer[i].weight || i in [1, 2, 3]
 
     def forward(self, sample, dropout):  # this is required function. can't change its name
-        # TODO maybe add 'dropout' parameter so we will only dropout for train and not for test
+        # TODO added 'dropout' parameter so we will only dropout for train and not for test
         word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
         original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
         # TODO GAL what is index 0? w is confusing because its index and not word
@@ -442,17 +459,17 @@ def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
-    MLP_inner_dim = 100
+    MLP_inner_dim = 500
     epochs = 15
     learning_rate = 0.01
-    dropout = 0.3
-    weight_decay = 0.7
+    dropout = 0.0
+    weight_decay = 0.5
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
     path_test = "test.labeled"
 
-    run_description = f"first run for the KiperwasserDependencyParser + Dropout (train only) + Weight Decay\n" \
+    run_description = f"first run for the KiperwasserDependencyParser + Weight Decay\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
                       f"word_embd_dim = {word_embd_dim}\n" \
                       f"pos_embd_dim = {pos_embd_dim}\n" \
