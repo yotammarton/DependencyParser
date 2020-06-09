@@ -449,8 +449,8 @@ def main():
     weight_decay = 0.7
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
-    path_train = "mini_train.labeled"
-    path_test = "mini_test.labeled"
+    path_train = "train.labeled"
+    path_test = "test.labeled"
 
     run_description = f"first run for the KiperwasserDependencyParser + Dropout (train only) + Weight Decay\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
