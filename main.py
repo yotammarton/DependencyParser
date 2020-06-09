@@ -453,7 +453,7 @@ def main():
     MLP_inner_dim = 500
     epochs = 30
     learning_rate = 0.01
-    dropout_layers_probability = 0.0
+    dropout_layers_probability = 0.25
     weight_decay = 0.0
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
