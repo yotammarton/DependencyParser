@@ -362,7 +362,8 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
             # calculate negative log likelihood loss
             # log softmax over the rows (modifiers in rows)
-            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)  # TODO GAL what about the dimensions? maybe the unsqueeze should be here?
+            loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
+            # TODO GAL what about the dimensions? maybe the unsqueeze should be here?
             loss = loss / acumulate_grad_steps
             loss.backward()
             train_loss += loss.item()
@@ -458,7 +459,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 def main():
     word_embd_dim = 300  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
-    hidden_dim = word_embd_dim + pos_embd_dim  # TODO fixed by word dim and pos dim or we want to change it??
+    hidden_dim = 125  # TODO that's what we are asked for by the article?
     MLP_inner_dim = 500
     epochs = 15
     learning_rate = 0.01
