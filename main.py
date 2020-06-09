@@ -463,7 +463,7 @@ def main():
     epochs = 15
     learning_rate = 0.01
     dropout = 0.0
-    weight_decay = 0.0
+    weight_decay = 1e-5
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
