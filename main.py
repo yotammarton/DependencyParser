@@ -450,7 +450,7 @@ def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
-    MLP_inner_dim = 500  # TODO change to 100 (article)
+    MLP_inner_dim = 100
     epochs = 30
     learning_rate = 0.01
     dropout_layers_probability = 0.25
