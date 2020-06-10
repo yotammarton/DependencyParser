@@ -358,7 +358,8 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
             train_loss += loss.item()
 
             # calculated sampled tress - only for accuracy calculations during train
-            if i % (acumulate_grad_steps / 2) == 0:
+            if i > 0.9 * len(train_dataloader):  # predict trees on 10% of train data
+            # if i % (acumulate_grad_steps / 2) == 0:
                 # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
                 predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
                                             has_labels=False)[0]
