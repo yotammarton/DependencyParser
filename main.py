@@ -447,7 +447,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    word_embd_dim = 300  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
     MLP_inner_dim = 100
@@ -456,11 +456,11 @@ def main():
     dropout_layers_probability = 0.25
     weight_decay = 0.0
     use_pre_trained = False
-    vectors = 'glove.6B.300d' if use_pre_trained else ''
+    vectors = 'glove.840B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
     path_test = "test.labeled"
 
-    run_description = f"first run for the KiperwasserDependencyParser + Weight Decay\n" \
+    run_description = f"KiperwasserDependencyParser\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
                       f"word_embd_dim = {word_embd_dim}\n" \
                       f"pos_embd_dim = {pos_embd_dim}\n" \
