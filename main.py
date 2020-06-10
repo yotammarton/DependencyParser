@@ -447,15 +447,15 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    word_embd_dim = 300  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = 25
     hidden_dim = 125
     MLP_inner_dim = 100
     epochs = 30
     learning_rate = 0.01
     dropout_layers_probability = 0.25
-    weight_decay = 0.0
-    use_pre_trained = True
+    weight_decay = 1e-5
+    use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
     path_train = "train.labeled"
     path_test = "test.labeled"
