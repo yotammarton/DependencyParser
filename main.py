@@ -192,7 +192,6 @@ class DependencyDataset(Dataset):
         pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
 
         for i, pos in enumerate(sorted(self.datareader.pos_dict.keys())):
-            # pos_idx_mappings[str(pos)] = int(i)
             pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
             idx_pos_mappings.append(str(pos))
         return pos_idx_mappings, idx_pos_mappings
