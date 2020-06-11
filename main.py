@@ -358,15 +358,14 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
             train_loss += loss.item()
 
             # calculated sampled tress - only for accuracy calculations during train
-            if False:
-                if i > 0.9 * len(train_dataloader):  # predict trees on 10% of train data
-                    # if i % (acumulate_grad_steps / 2) == 0:
-                    # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-                    predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
-                                                has_labels=False)[0]
+            if i > 0.9 * len(train_dataloader):  # predict trees on 10% of train data
+                # if i % (acumulate_grad_steps / 2) == 0:
+                # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+                predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
+                                            has_labels=False)[0]
 
-                    train_acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
-                    mst_trees_calculated += 1
+                train_acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
+                mst_trees_calculated += 1
 
             # perform optimization step
             if i % acumulate_grad_steps == 0 or i == len(train_dataloader):
@@ -380,7 +379,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
         start_test_time = time.time()
         # calculate test accuracy - TODO skip the next 3 lines if no need to know the test accuracy during training
-        test_acc, test_loss = evaluate(model, test_dataloader) if False else 0, 0
+        test_acc, test_loss = evaluate(model, test_dataloader)
         test_accuracy_list.append(test_acc)
         test_loss_list.append(test_loss)
         stop_test_time = time.time()
@@ -452,14 +451,14 @@ def main():
     pos_embd_dim = 25
     hidden_dim = 125
     MLP_inner_dim = 100
-    epochs = 100
+    epochs = 30
     learning_rate = 0.01
     dropout_layers_probability = 0.0
     weight_decay = 0.0
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
-    path_train = "mini_train.labeled"
-    path_test = "mini_test.labeled"
+    path_train = "train.labeled"
+    path_test = "test.labeled"
 
     run_description = f"KiperwasserDependencyParser\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
