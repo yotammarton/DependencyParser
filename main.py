@@ -374,7 +374,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
                 model.zero_grad()
 
         train_loss = acumulate_grad_steps * train_loss / len(train_dataloader)
-        train_acc = train_acc / mst_trees_calculated
+        train_acc = train_acc / mst_trees_calculated if mst_trees_calculated != 0 else 0
         train_loss_list.append(train_loss)
         train_accuracy_list.append(train_acc)
 
