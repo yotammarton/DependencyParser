@@ -451,14 +451,14 @@ def main():
     pos_embd_dim = 25
     hidden_dim = 125
     MLP_inner_dim = 100
-    epochs = 100
+    epochs = 30
     learning_rate = 0.01
     dropout_layers_probability = 0.0
     weight_decay = 0.0
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
-    path_train = "mini_train.labeled"
-    path_test = "mini_test.labeled"
+    path_train = "train.labeled"
+    path_test = "test.labeled"
 
     run_description = f"KiperwasserDependencyParser\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
