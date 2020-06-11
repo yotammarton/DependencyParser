@@ -130,7 +130,7 @@ class DependencyDataset(Dataset):
             self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
             self.idx_word_mappings = list(self.word_idx_mappings.keys())
             words_embeddings_tensor = nn.Embedding(len(self.word_idx_mappings), word_embd_dim).weight.data
-            vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=0)
+            vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=1)
             vocab.set_vectors(stoi=self.word_idx_mappings, vectors=words_embeddings_tensor, dim=word_embd_dim)
             # take all 3 attributes like in the pre-trained part 
             self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = \
@@ -170,7 +170,7 @@ class DependencyDataset(Dataset):
                            'glove.6B.200d',
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
-        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS, min_freq=0)
+        glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS, min_freq=1)
         # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
         # TODO YOTAM: word_dict is already a counter so the Counter(word_dict) is the same dict with keys
         #  and values but different object (not sure if necessary but we can leave it like that)
@@ -453,7 +453,7 @@ def main():
     MLP_inner_dim = 100
     epochs = 30
     learning_rate = 0.01
-    dropout_layers_probability = 0.4
+    dropout_layers_probability = 0.0
     weight_decay = 0.0
     use_pre_trained = False
     vectors = 'glove.6B.300d' if use_pre_trained else ''
