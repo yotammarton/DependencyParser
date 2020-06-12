@@ -17,8 +17,9 @@ import os
 from chu_liu_edmonds import decode_mst
 
 # Constants
-ROOT_TOKEN = "<root>"  # TODO GAL this is root pos or root word?
-UNKNOWN_TOKEN = "<unk>"  # TODO GAL according to the forum, its represents unknown POS?
+ROOT_TOKEN = "<root_token>"
+ROOT_POS = "<root_pos>"
+UNKNOWN_TOKEN = "<unk_token>"
 SPECIAL_TOKENS = [ROOT_TOKEN, UNKNOWN_TOKEN]
 
 
@@ -43,30 +44,6 @@ def get_vocabs_counts(list_of_paths):
     return word_dict, pos_dict
 
 
-# returns {'The': 0, 'I': 1, 'Boeing': 2....}, {'DT': 0, 'NNP': 1, 'VBG': 2....}
-def create_idx_dicts(word_dict, pos_dict):
-    # TODO GAL maybe sparate to pos and words, because we will call the POS function in both cases of embeddings
-    """
-    create dictionary with index to each word. also dictionary with index to each pos.
-    we should call this function only if we create embedding vectors by ourselves.
-    :param word_dict: a dictionary with the different words
-    :param pos_dict: a dictionary with the different tags
-    """
-    word_idx_dict = defaultdict(int)
-    pos_idx_dict = defaultdict(int)
-    idx = 0
-    for word in word_dict.keys():
-        word_idx_dict[word] = idx
-        idx += 1
-
-    idx = 0
-    for pos in pos_dict.keys():
-        pos_idx_dict[pos] = idx
-        idx += 1
-
-    return word_idx_dict, pos_idx_dict
-
-
 class DataReader:
     def __init__(self, file, word_dict, pos_dict):  # call to readData
         self.file = file
@@ -78,12 +55,12 @@ class DataReader:
     def __readData__(self):
         """main reader function which also populates the class data structures"""
         with open(self.file) as f:
-            sentence, tags, heads = [ROOT_TOKEN], [ROOT_TOKEN], []
+            sentence, tags, heads = [ROOT_TOKEN], [ROOT_POS], []
             for line in f:
                 if line == "\n":
                     if heads:
                         self.D.append((sentence, tags, heads))
-                    sentence, tags, heads = [ROOT_TOKEN], [ROOT_TOKEN], []
+                    sentence, tags, heads = [ROOT_TOKEN], [ROOT_POS], []
                 else:
                     splited_values = re.split('\t', line)
                     # m = int(splited_values[0])
@@ -96,9 +73,9 @@ class DataReader:
                     heads.append(h)
 
                     # e.g.  # TODO GAL we have special embedding for root, and another one for unknown?
-                    # ['<root>', 'It', 'has', 'no', 'bearing', 'on', 'our', 'work', 'force', 'today', '.'] len = 11
-                    # ['<root>', 'PRP', 'VBZ', 'DT', 'NN', 'IN', 'PRP$', 'NN', 'NN', 'NN', '.']             len = 11
-                    # ['2', '0', '4', '2', '4', '8', '8', '5', '8', '2']                                   len = 10
+                    # ['<root_token>', 'It', 'has', 'no', 'on', 'our', 'work', 'force', 'today', '.'] len = 10
+                    # ['<root_pos>', 'PRP', 'VBZ', 'DT', 'NN', 'PRP$', 'NN', 'NN', 'NN', '.']         len = 10
+                    # ['2', '0', '4', '2', '4', '8', '8', '5', '2']                                   len = 9
 
     def get_num_sentences(self):
         """returns num of sentences in data"""
@@ -106,46 +83,52 @@ class DataReader:
 
 
 class DependencyDataset(Dataset):
-    def __init__(self, word_dict, pos_dict, path: str, word_embd_dim, pos_embd_dim,
-                 padding=False, use_pre_trained=True, pre_trained_vectors_name: str = None):
+    def __init__(self, path: str, word_dict=None, pos_dict=None, word_embd_dim=None, pos_embd_dim=None,
+                 test=None, use_pre_trained=True, pre_trained_vectors_name: str = None):
+        """
+        :param path: path to train / test file
+        :param word_dict: defaultdict(<class 'int'>, {'Pierre': 1, 'Vinken': 2, ',': 6268,...}
+        :param pos_dict: defaultdict(<class 'int'>, {'NNP': 11837, ',': 6270, 'CD': 4493,...}
+        :param word_embd_dim: dimension of word embedding
+        :param pos_embd_dim: dimension of pos embedding
+        :param test: if False / None we train vectors (or use-pertained).
+                     else should be a list train.word_idx_mappings, train.pos_idx_mappings
+        :param use_pre_trained: True / False
+        :param pre_trained_vectors_name: What pre-trained vectors to use
+        """
         super().__init__()
         self.file = path
         self.datareader = DataReader(self.file, word_dict, pos_dict)
         self.vocab_size = len(self.datareader.word_dict)
-        if use_pre_trained:  # pre-trained word embeddings
-            self.word_idx_mappings, self.idx_word_mappings, self.pre_trained_word_vectors = \
-                self.init_word_embeddings(self.datareader.word_dict, pre_trained_vectors_name)
-        else:
-            self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
-            self.idx_word_mappings = list(self.word_idx_mappings.keys())
-            # self.word_embedding = nn.Embedding(word_vocab_size, word_embedding_dim)
-            self.word_vectors = nn.Embedding(len(self.word_idx_mappings), word_embd_dim)
-            # TODO GAL its attribute that doesn't init to nothing if we are with pertained, maybe change the name?
+        if test:
+            # no need to train vectors or create them, and also not vocabulary
+            # that's because we use the vectors and vocabulary from train
+            self.word_idx_mappings = test[0]
+            self.pos_idx_mappings = test[1]
+            self.sentences_dataset = self.convert_sentences_to_dataset()
 
-            # TODO YOTAM: Possible change to this 'else' statement:
-            # that's because:
-            # 1. now we can control the SPECIAL_TOKENS and add them also when having nn.Embedding
-            # 2. now we can control the min_freq
-            """
-            self.word_idx_mappings = create_idx_dicts(word_dict, pos_dict)[0]
-            self.idx_word_mappings = list(self.word_idx_mappings.keys())
-            words_embeddings_tensor = nn.Embedding(len(self.word_idx_mappings), word_embd_dim).weight.data
-            vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=1)
-            vocab.set_vectors(stoi=self.word_idx_mappings, vectors=words_embeddings_tensor, dim=word_embd_dim)
-            # take all 3 attributes like in the pre-trained part 
-            self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = \
-                vocab.stoi, vocab.itos, vocab.vectors
-            """
+        else:  # training
+            if use_pre_trained:  # pre-trained word embeddings
+                self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = \
+                    self.init_word_embeddings(self.datareader.word_dict, pre_trained_vectors_name)
+            else:
+                # create Vocab variable just for the ease of using the special tokens and the other nice features
+                # like it will create the word_idx_mapping by itself
+                vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=1)
 
-        # pos embeddings
-        self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
-        self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
+                # set rand vectors and get the weights (the vector embeddings themselves)
+                words_embeddings_tensor = nn.Embedding(len(vocab.stoi), word_embd_dim).weight.data
+                vocab.set_vectors(stoi=vocab.stoi, vectors=words_embeddings_tensor, dim=word_embd_dim)
+                # take all 3 attributes like in the pre-trained part
+                self.word_idx_mappings, self.idx_word_mappings, self.word_vectors = \
+                    vocab.stoi, vocab.itos, vocab.vectors
 
-        self.unknown_idx = self.word_idx_mappings.get(UNKNOWN_TOKEN)
-        # TODO index -1 will always be index 1? because it always be 2 dimensional?
-        self.word_vector_dim = self.pre_trained_word_vectors.size(-1) if use_pre_trained \
-            else self.word_vectors.embedding_dim  # TODO GAL this is attribute of nn.embedding function
-        self.sentences_dataset = self.convert_sentences_to_dataset()
+            # pos embeddings
+            self.pos_idx_mappings, self.idx_pos_mappings = self.init_pos_vocab()
+            self.pos_vectors = nn.Embedding(len(self.pos_idx_mappings), pos_embd_dim)
+
+            self.word_vector_dim = self.word_vectors.size(-1)
+            self.sentences_dataset = self.convert_sentences_to_dataset()
 
     def __len__(self):
         return len(self.sentences_dataset)
@@ -172,32 +155,23 @@ class DependencyDataset(Dataset):
             raise ValueError("pre-trained embedding vectors not found")
         glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS, min_freq=1)
         # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
-        # TODO YOTAM: word_dict is already a counter so the Counter(word_dict) is the same dict with keys
-        #  and values but different object (not sure if necessary but we can leave it like that)
         # TODO YOTAM I think we should make something similar if we train by ourselves
         return glove.stoi, glove.itos, glove.vectors
 
-    def get_word_embeddings(self):
-        return self.word_idx_mappings, self.idx_word_mappings, self.word_vectors
-
     # return idx mapping for POS tags
-    # pos_idx_mappings - {'<root>': 0, '<unk>': 1, '#': 2, '$': 3, ..... }
-    # idx_pos_mappings - ['<root>', '<unk>', '#', '$', ....]
+    # pos_idx_mappings - {'<root_pos>': 0, '#': 1, '$': 2, "''": 3, ...}
+    # idx_pos_mappings - ['<root_pos>', '#', '$', "''", ... ]
     def init_pos_vocab(self):
         """
-        :param pos_dict: {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
         :return: index mapping for POS tags
         """
-        idx_pos_mappings = sorted([token for token in SPECIAL_TOKENS])
+        idx_pos_mappings = [ROOT_POS]
         pos_idx_mappings = {pos: idx for idx, pos in enumerate(idx_pos_mappings)}
 
         for i, pos in enumerate(sorted(self.datareader.pos_dict.keys())):
-            pos_idx_mappings[str(pos)] = int(i + len(SPECIAL_TOKENS))
+            pos_idx_mappings[str(pos)] = int(i + 1)  # +1 for <root_pos>
             idx_pos_mappings.append(str(pos))
         return pos_idx_mappings, idx_pos_mappings
-
-    def get_pos_vocab(self):
-        return self.pos_idx_mappings, self.idx_pos_mappings
 
     def convert_sentences_to_dataset(self):
         """
@@ -206,11 +180,12 @@ class DependencyDataset(Dataset):
         """
         sentence_word_idx_list = list()
         sentence_pos_idx_list = list()
-        sentence_heads_list = list()  # TODO should we index the heads somehow??
+        sentence_heads_list = list()
 
         for sample_idx, sample in enumerate(self.datareader.D):
             words, tags, heads = sample
-            words_idx_list = [self.word_idx_mappings[word] for word in words]
+            words_idx_list = [self.word_idx_mappings[word] if word in self.word_idx_mappings
+                              else self.word_idx_mappings[UNKNOWN_TOKEN] for word in words]
             pos_idx_list = [self.pos_idx_mappings[tag] for tag in tags]
 
             # we don't want to activate grads for the indexes because these are not parameters
@@ -228,13 +203,12 @@ class DependencyDataset(Dataset):
 
 
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout_layers=0.0, use_pre_trained=True):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout_layers=0.0):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
         :param MLP_inner_dim: controls the matrix size W1 (MLP_inner_dim x 500) and so that the length of W2 vector
         :param dropout_layers: in between layers (doc: https://pytorch.org/docs/master/generated/torch.nn.LSTM.html)
-        :param use_pre_trained: bool.
         """
         super(KiperwasserDependencyParser, self).__init__()
         self.dataset = dataset
@@ -242,11 +216,8 @@ class KiperwasserDependencyParser(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Implement embedding layer for words (can be new or pertained - word2vec/glove)
-        if use_pre_trained:  # use pre trained vectors
-            # this is not matrix of embeddings. its function that gets indexes and return embeddings
-            self.word_embedding = nn.Embedding.from_pretrained(dataset.pre_trained_word_vectors, freeze=False)
-        else:
-            self.word_embedding = dataset.word_vectors
+        # this is not matrix of embeddings. its function that gets indexes and return embeddings
+        self.word_embedding = nn.Embedding.from_pretrained(dataset.word_vectors, freeze=False)
 
         # Implement embedding layer for POS tags
         self.pos_embedding = dataset.pos_vectors
@@ -293,7 +264,10 @@ class KiperwasserDependencyParser(nn.Module):
         # size  = [batch_size, seq_length, 2*hidden_dim]
         # encoder wants to get tensor. it is not defined in our code but that's how NN works
         lstm_out, _ = self.encoder(word_pos_embeddings)
+        n = lstm_out.shape[1]
 
+        # TODO old version
+        """
         # Get score for each possible edge in the parsing graph, construct score matrix
         # n = original sentence length + 1
         n = lstm_out.shape[1]
@@ -306,8 +280,16 @@ class KiperwasserDependencyParser(nn.Module):
                 h_m_concat = torch.cat((head_vector, modifier_vector))
                 MLP_score = self.edge_scorer(h_m_concat)
                 MLP_scores_mat[m][h] = MLP_score
+        """
+        heads = lstm_out[0].unsqueeze(0)
+        modifiers = lstm_out[0].unsqueeze(1)
+        heads_tmp = heads.repeat(lstm_out[0].shape[0], 1, 1)
+        modifiers_tmp = modifiers.repeat(1, lstm_out[0].shape[0], 1)
+        heads_modifier_cat = torch.cat([heads_tmp, modifiers_tmp], -1)
+        heads_modifier_cat = heads_modifier_cat.view(-1, heads_modifier_cat.shape[-1])
 
-        return MLP_scores_mat
+        MLP_scores_mat_new = self.edge_scorer(heads_modifier_cat).view(n, n)
+        return MLP_scores_mat_new
 
 
 def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay):
@@ -321,7 +303,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         model.cuda()
 
     # Define the loss function as the Negative Log Likelihood loss (NLLLoss)
-    loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
+    loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')
 
     # We will be using a simple SGD optimizer to minimize the loss function
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -339,6 +321,10 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         train_loss = 0  # to keep track of the loss value
         mst_trees_calculated = 0  # keep track of amount of trees calculated to plot the accuracy graph
         i = 0  # keep track of samples processed
+
+        # print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
+        # print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
+
         for batch_idx, input_data in enumerate(train_dataloader):
             i += 1
             # size = [sentence_length + 1, sentence_length + 1]
@@ -347,21 +333,19 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
             gold_heads = input_data[2]
 
             # concat -1 to true heads, we ignore this target value of -1
-            target = torch.cat((torch.tensor([-1]), gold_heads[0]))
+            target = torch.cat((torch.tensor([-1]), gold_heads[0])).to(device)
 
             # calculate negative log likelihood loss
             # log softmax over the rows (modifiers in rows)
             loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
-            # TODO GAL what about the dimensions? maybe the unsqueeze should be here?
             loss = loss / acumulate_grad_steps
             loss.backward()
             train_loss += loss.item()
 
             # calculated sampled tress - only for accuracy calculations during train
             if i > 0.9 * len(train_dataloader):  # predict trees on 10% of train data
-                # if i % (acumulate_grad_steps / 2) == 0:
                 # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-                predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
+                predicted_tree = decode_mst(MLP_scores_mat.cpu().data.numpy().T, length=MLP_scores_mat.shape[0],
                                             has_labels=False)[0]
 
                 train_acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
@@ -378,7 +362,7 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         train_accuracy_list.append(train_acc)
 
         start_test_time = time.time()
-        # calculate test accuracy - TODO skip the next 3 lines if no need to know the test accuracy during training
+        # calculate test accuracy >>> skip the next 3 lines if no need to know the test accuracy during training
         test_acc, test_loss = evaluate(model, test_dataloader)
         test_accuracy_list.append(test_acc)
         test_loss_list.append(test_loss)
@@ -417,22 +401,22 @@ def evaluate(model, dataloader):
 
     # tell the model not to learn
     with torch.no_grad():
-        loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')  # TODO check ignore index
+        loss_function = nn.NLLLoss(ignore_index=-1, reduction='mean')
         for batch_idx, input_data in enumerate(dataloader):
             MLP_scores_mat = model(input_data)
             gold_heads = input_data[2]
 
             # concat -1 to true heads, we ignore this target value of -1
-            target = torch.cat((torch.tensor([-1]), gold_heads[0]))
+            target = torch.cat((torch.tensor([-1]), gold_heads[0])).to(model.device)
 
             # calculate negative log likelihood loss
             # log softmax over the rows (modifiers in rows)
             loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
-            loss_value += loss.item()  # TODO change this to take only the value itself and not reference !!!!
+            loss_value += loss.item()
 
             # Use Chu-Liu-Edmonds to get the predicted parse tree T' given the calculated score matrix
             # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-            predicted_tree = decode_mst(MLP_scores_mat.detach().numpy().T, length=MLP_scores_mat.shape[0],
+            predicted_tree = decode_mst(MLP_scores_mat.data.cpu().numpy().T, length=MLP_scores_mat.shape[0],
                                         has_labels=False)[0]
 
             acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
@@ -483,17 +467,16 @@ def main():
 
     """TRAIN DATA"""
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
-    train = DependencyDataset(train_word_dict, train_pos_dict, path_train, word_embd_dim, pos_embd_dim,
-                              padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
+    train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
+                              word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
+                              test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
     train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim,
-                                        dropout_layers_probability, use_pre_trained=use_pre_trained)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
 
     """TEST DATA"""
-    test_word_dict, test_pos_dict = get_vocabs_counts([path_test])
 
-    test = DependencyDataset(test_word_dict, test_pos_dict, path_test, word_embd_dim, pos_embd_dim,
-                             padding=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
+    test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
+                             test=[train.word_idx_mappings, train.pos_idx_mappings])
     test_dataloader = DataLoader(test, shuffle=False)
 
     """TRAIN THE PARSER ON TRAIN DATA"""
@@ -516,11 +499,16 @@ def main():
 
 
 if __name__ == "__main__":
-    import cProfile
+    main()
 
-    PROFFILE = 'prof.profile'
-    cProfile.run('main()', PROFFILE)
-    import pstats
+    # import cProfile
+    #
+    # PROFFILE = 'prof.profile'
+    # cProfile.run('main()', PROFFILE)
+    # import pstats
+    #
+    # p = pstats.Stats(PROFFILE)
+    # p.sort_stats('tottime').print_stats(200)
 
-    p = pstats.Stats(PROFFILE)
-    p.sort_stats('tottime').print_stats(200)
+# TODO ADD WORD DROP OUT LIKE IN ARTICLE
+# TODO UNK_TOKEN_PER-POS - for every POS create token
