@@ -512,3 +512,5 @@ if __name__ == "__main__":
 
 # TODO ADD WORD DROP OUT LIKE IN ARTICLE
 # TODO UNK_TOKEN_PER-POS - for every POS create token
+# TODO OOV - maybe try lower or upper
+# TODO LSTM ON CHARS
