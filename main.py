@@ -322,8 +322,8 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
         mst_trees_calculated = 0  # keep track of amount of trees calculated to plot the accuracy graph
         i = 0  # keep track of samples processed
 
-        print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
-        print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
+        # print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
+        # print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
         data = list(enumerate(train_dataloader))  # save this so we can modify it to introduce word-dropout
         word_dropout(model, data, alpha=alpha)
 
