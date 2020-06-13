@@ -292,7 +292,7 @@ class KiperwasserDependencyParser(nn.Module):
         return MLP_scores_mat_new
 
 
-def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay):
+def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha):
     start = time.time()
     total_test_time = 0
 
@@ -324,8 +324,10 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
         # print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
         # print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
+        data = list(enumerate(train_dataloader))  # save this so we can modify it to introduce word-dropout
+        word_dropout(model, data, alpha=alpha)
 
-        for batch_idx, input_data in enumerate(train_dataloader):
+        for batch_idx, input_data in data:
             i += 1
             # size = [sentence_length + 1, sentence_length + 1]
             MLP_scores_mat = model(input_data)  # forward activated inside
@@ -382,6 +384,43 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
     print(f'\n\n\ntotal_train_time = {int(total_train_time)} SECS \t total_test_time = {int(total_test_time)} SECS')
     return train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list
+
+
+def word_dropout(model, data, alpha=0.25):
+    """
+    During training, we employ a variant of word dropout (Iyyer et al., 2015), and replace a word with
+    the unknown-word symbol with probability that is inversely proportional to the frequency of the word.
+    A word w appearing #(w) times in the training corpus is replaced with the unknown symbol with probability
+    p(w) = alpha / (tf(w) + alpha). where tf(w) is the number of appearances of term w in the train corpus
+    :param model: nn.Module
+    :param data: the train data for the current epoch
+    :param alpha: hyper parameter
+    :return: None. changes  'data' (only for the current epoch).
+    """
+    word_counter_dict = Counter(model.dataset.datareader.word_dict)
+    idx_word_dict = {v: k for k, v in model.dataset.word_idx_mappings.items()}
+    idx_dropout_prob_dict = dict()
+    for idx, word in idx_word_dict.items():
+        # we will assign the probability of each word (it's index) to be dropped
+        if word not in word_counter_dict:  # e.g. any special token (in practice - only for <root_token>)
+            idx_dropout_prob_dict[idx] = 0
+        else:  # word is a word in our dictionary of train words
+            idx_dropout_prob_dict[idx] = alpha / (word_counter_dict[word] + alpha)
+
+    for _, sample_tensor in data:
+        sentence_tensor = sample_tensor[0][0]
+        sentence_dropout_probabilities = torch.tensor([idx_dropout_prob_dict[int(idx)]
+                                                       for idx in sentence_tensor])
+        n = len(sentence_tensor)
+        # based on every word-drop out probabilities create Bernoulli vector
+        bernoulli_toss = torch.bernoulli(sentence_dropout_probabilities)  # 1 = dropout, 0 = no dropout
+        # tensor with [1, 1, 1, 1, ...] (which is the index of '<unk_token>')
+        unk_token_tensor = torch.empty(n, dtype=torch.int64). \
+            fill_(model.dataset.word_idx_mappings['<unk_token>'])
+
+        sample_tensor[0][0] = torch.where(bernoulli_toss == 0,  # condition
+                                          sentence_tensor,  # if condition true take element from this tensor
+                                          unk_token_tensor)  # else take from this tensor
 
 
 """Advanced Model - GoldMart = Goldstein-Martin"""
@@ -457,65 +496,67 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    # pos_embd_dim = 25
-    # hidden_dim = 125
-    # MLP_inner_dim = 100
-    # epochs = 30
-    # learning_rate = 0.01
-    # dropout_layers_probability = 0.0
-    # weight_decay = 0.0
-    # use_pre_trained = False
-    # vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
-    # path_train = "train.labeled"
-    # path_test = "test.labeled"
-    #
-    # run_description = f"KiperwasserDependencyParser\n" \
-    #                   f"-------------------------------------------------------------------------------------------\n" \
-    #                   f"word_embd_dim = {word_embd_dim}\n" \
-    #                   f"pos_embd_dim = {pos_embd_dim}\n" \
-    #                   f"hidden_dim = {hidden_dim}\n" \
-    #                   f"MLP_inner_dim = {MLP_inner_dim}\n" \
-    #                   f"epochs = {epochs}\n" \
-    #                   f"learning_rate = {learning_rate}\n" \
-    #                   f"dropout_layers_probability = {dropout_layers_probability}\n" \
-    #                   f"weight_decay = {weight_decay}\n" \
-    #                   f"use_pre_trained = {use_pre_trained}\n" \
-    #                   f"vectors = {vectors}\n" \
-    #                   f"path_train = {path_train}\n" \
-    #                   f"path_test = {path_test}\n"
-    #
-    # current_machine_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))
-    # print(f"{current_machine_date_time}\n"
-    #       f"{run_description}")
-    #
-    # path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
-    #
-    # """TRAIN DATA"""
-    # train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
-    # train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
-    #                           word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
-    #                           test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
-    # train_dataloader = DataLoader(train, shuffle=True)
-    # model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
-    #
-    # """TEST DATA"""
-    #
-    # test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
-    #                          test=[train.word_idx_mappings, train.pos_idx_mappings])
-    # test_dataloader = DataLoader(test, shuffle=False)
-    #
-    # """TRAIN THE PARSER ON TRAIN DATA"""
-    # train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
-    #     train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay)
-    #
-    # print(f'\ntrain_accuracy_list = {train_accuracy_list}'
-    #       f'\ntrain_loss_list = {train_loss_list}'
-    #       f'\ntest_accuracy_list = {test_accuracy_list}'
-    #       f'\ntest_loss_list = {test_loss_list}')
-    #
-    # """SAVE MODEL"""
-    # torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
+    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    pos_embd_dim = 25
+    hidden_dim = 125
+    MLP_inner_dim = 100
+    epochs = 30
+    learning_rate = 0.01
+    dropout_layers_probability = 0.0
+    weight_decay = 0.0
+    alpha = 0.4
+    use_pre_trained = False
+    vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
+    path_train = "train.labeled"
+    path_test = "test.labeled"
+
+    run_description = f"KiperwasserDependencyParser\n" \
+                      f"-------------------------------------------------------------------------------------------\n" \
+                      f"word_embd_dim = {word_embd_dim}\n" \
+                      f"pos_embd_dim = {pos_embd_dim}\n" \
+                      f"hidden_dim = {hidden_dim}\n" \
+                      f"MLP_inner_dim = {MLP_inner_dim}\n" \
+                      f"epochs = {epochs}\n" \
+                      f"learning_rate = {learning_rate}\n" \
+                      f"dropout_layers_probability = {dropout_layers_probability}\n" \
+                      f"weight_decay = {weight_decay}\n" \
+                      f"alpha = {alpha}\n" \
+                      f"use_pre_trained = {use_pre_trained}\n" \
+                      f"vectors = {vectors}\n" \
+                      f"path_train = {path_train}\n" \
+                      f"path_test = {path_test}\n"
+
+    current_machine_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))
+    print(f"{current_machine_date_time}\n"
+          f"{run_description}")
+
+    path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
+
+    """TRAIN DATA"""
+    train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
+    train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
+                              word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
+                              test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
+    train_dataloader = DataLoader(train, shuffle=True)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
+
+    """TEST DATA"""
+
+    test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
+                             test=[train.word_idx_mappings, train.pos_idx_mappings])
+    test_dataloader = DataLoader(test, shuffle=False)
+
+    """TRAIN THE PARSER ON TRAIN DATA"""
+    train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
+        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha)
+
+    print(f'\ntrain_accuracy_list = {train_accuracy_list}'
+          f'\ntrain_loss_list = {train_loss_list}'
+          f'\ntest_accuracy_list = {test_accuracy_list}'
+          f'\ntest_loss_list = {test_loss_list}')
+
+    """SAVE MODEL"""
+    torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
 
     """PLOT GRAPHS"""
     train_accuracy_list = [0.89, 0.89, 0.90, 0.93, 0.95, 0.94, 0.93]
@@ -540,7 +581,6 @@ if __name__ == "__main__":
     # p = pstats.Stats(PROFFILE)
     # p.sort_stats('tottime').print_stats(200)
 
-# TODO ADD WORD DROP OUT LIKE IN ARTICLE
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
 # TODO LSTM ON CHARS
