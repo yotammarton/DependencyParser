@@ -499,17 +499,18 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.show()
 
 
-def main():
+def main(pos_embd_dim, min_freq, weight_dacay, epochs):
+
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = 25
+    pos_embd_dim = pos_embd_dim # default is 50
     hidden_dim = 125
     MLP_inner_dim = 100
-    epochs = 30
+    epochs = epochs
     learning_rate = 0.01
     dropout_layers_probability = 0.0
-    weight_decay = 0.0
+    weight_decay = weight_dacay
     alpha = 0.25  # 0.0 means no word dropout
-    min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    min_freq = min_freq  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     BiLSTM_layers = 2
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
@@ -574,16 +575,42 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    ### one run option ###
+    epochs = 15
+    pos_embd_dim = 50 # default is 50
+    min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    weight_decay = 0.0
 
-    # import cProfile
-    #
-    # PROFFILE = 'prof.profile'
-    # cProfile.run('main()', PROFFILE)
-    # import pstats
-    #
-    # p = pstats.Stats(PROFFILE)
-    # p.sort_stats('tottime').print_stats(200)
+    main(pos_embd_dim, min_freq, weight_decay, epochs)
+    exit(3)
+
+    ### combinations run option ###
+    for epochs in [15]:
+        for pos_embd_dim in [15, 25, 50, 75, 100]:
+            for min_freq in [2, 3, 5, 10]:
+                for weight_dacay in [1e-5, 1e-6, 1e-7, 0.0]:
+                    main(pos_embd_dim, min_freq, weight_dacay, epochs)
+
+        # TODO ADD THESE MAYBE
+        # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+        # hidden_dim = 125
+        # MLP_inner_dim = 100
+        # epochs = 30
+        # learning_rate = 0.01
+        # dropout_layers_probability = 0.0
+        # alpha = 0.0  # 0.0 means no word dropout
+        # use_pre_trained = False
+        # num_layers of LSTM
+
+
+# import cProfile
+#
+# PROFFILE = 'prof.profile'
+# cProfile.run('main()', PROFFILE)
+# import pstats
+#
+# p = pstats.Stats(PROFFILE)
+# p.sort_stats('tottime').print_stats(200)
 
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
