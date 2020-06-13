@@ -514,3 +514,5 @@ if __name__ == "__main__":
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
 # TODO LSTM ON CHARS
+# TODO CHANGE WORDS WITH NUMBERS AND NO a-zA-Z (allow ,:. etc) TO 'N'
+# TODO LOWER IF WORD NOT IN VOCAB
