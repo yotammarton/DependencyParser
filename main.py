@@ -499,7 +499,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.show()
 
 
-def main(pos_embd_dim, min_freq, weight_dacay, epochs):
+def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
 
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = pos_embd_dim # default is 50
@@ -511,7 +511,7 @@ def main(pos_embd_dim, min_freq, weight_dacay, epochs):
     weight_decay = weight_dacay
     alpha = 0.25  # 0.0 means no word dropout
     min_freq = min_freq  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
-    BiLSTM_layers = 2
+    BiLSTM_layers = BiLSTM_layers
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -589,7 +589,8 @@ if __name__ == "__main__":
         for pos_embd_dim in [15, 25, 50, 75, 100]:
             for min_freq in [2, 3, 5, 10]:
                 for weight_dacay in [1e-5, 1e-6, 1e-7, 0.0]:
-                    main(pos_embd_dim, min_freq, weight_dacay, epochs)
+                    for BiLSTM_layers in [2, 3, 4]:
+                        main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
 
         # TODO ADD THESE MAYBE
         # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
@@ -617,3 +618,20 @@ if __name__ == "__main__":
 # TODO LSTM ON CHARS
 # TODO CHANGE WORDS WITH NUMBERS AND NO a-zA-Z (allow ,:. etc) TO 'N'
 # TODO LOWER IF WORD NOT IN VOCAB
+
+#################### 0.907689272538441
+# word_embd_dim = 100
+# pos_embd_dim = 75
+# hidden_dim = 150
+# MLP_inner_dim = 100
+# epochs = 30
+# learning_rate = 0.01
+# dropout_layers_probability = 0.0
+# weight_decay = 0.0
+# alpha = 10
+# min_freq = 4
+# BiLSTM_layers = 4
+# use_pre_trained = False
+# vectors =
+# path_train = train.labeled
+# path_test = test.labeled
