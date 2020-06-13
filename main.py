@@ -204,7 +204,7 @@ class DependencyDataset(Dataset):
 
 
 class KiperwasserDependencyParser(nn.Module):
-    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, dropout_layers=0.0):
+    def __init__(self, dataset: DependencyDataset, hidden_dim, MLP_inner_dim, BiLSTM_layers, dropout_layers):
         """
         :param dataset: dataset for training
         :param hidden_dim: size of hidden dim (output of LSTM, aka v_i)
@@ -227,7 +227,7 @@ class KiperwasserDependencyParser(nn.Module):
 
         # Implement BiLSTM module which is fed with word+pos embeddings and outputs hidden representations
         self.encoder = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim,
-                               num_layers=2, dropout=dropout_layers, bidirectional=True, batch_first=True)
+                               num_layers=BiLSTM_layers, dropout=dropout_layers, bidirectional=True, batch_first=True)
 
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
         # MLP(x) = W2 * tanh(W1 * x + b1) + b2
@@ -510,6 +510,7 @@ def main():
     weight_decay = 0.0
     alpha = 0.25  # 0.0 means no word dropout
     min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    BiLSTM_layers = 2
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -527,6 +528,7 @@ def main():
                       f"weight_decay = {weight_decay}\n" \
                       f"alpha = {alpha}\n" \
                       f"min_freq = {min_freq}\n" \
+                      f"BiLSTM_layers = {BiLSTM_layers}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
                       f"path_train = {path_train}\n" \
@@ -544,7 +546,7 @@ def main():
                               word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim, test=False,
                               use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=min_freq)
     train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
+    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, BiLSTM_layers, dropout_layers_probability)
 
     """TEST DATA"""
 
