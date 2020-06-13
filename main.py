@@ -502,7 +502,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
 
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = pos_embd_dim # default is 50
+    pos_embd_dim = pos_embd_dim  # default is 25
     hidden_dim = 125
     MLP_inner_dim = 100
     epochs = epochs
@@ -577,7 +577,7 @@ def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
 if __name__ == "__main__":
     ### one run option ###
     # epochs = 15
-    # pos_embd_dim = 50 # default is 50
+    # pos_embd_dim = 25 # default is 25
     # min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     # weight_decay = 0.0
     # BiLSTM_layers = 2
@@ -605,34 +605,8 @@ if __name__ == "__main__":
         # num_layers of LSTM
 
 
-# import cProfile
-#
-# PROFFILE = 'prof.profile'
-# cProfile.run('main()', PROFFILE)
-# import pstats
-#
-# p = pstats.Stats(PROFFILE)
-# p.sort_stats('tottime').print_stats(200)
-
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
 # TODO LSTM ON CHARS
 # TODO CHANGE WORDS WITH NUMBERS AND NO a-zA-Z (allow ,:. etc) TO 'N'
 # TODO LOWER IF WORD NOT IN VOCAB
-
-#################### 0.907689272538441
-# word_embd_dim = 100
-# pos_embd_dim = 75
-# hidden_dim = 150
-# MLP_inner_dim = 100
-# epochs = 30
-# learning_rate = 0.01
-# dropout_layers_probability = 0.0
-# weight_decay = 0.0
-# alpha = 10
-# min_freq = 4
-# BiLSTM_layers = 4
-# use_pre_trained = False
-# vectors =
-# path_train = train.labeled
-# path_test = test.labeled
