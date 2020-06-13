@@ -501,7 +501,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 def main(pos_embd_dim, min_freq, weight_dacay, epochs):
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = pos_embd_dim  # default is 50
+    pos_embd_dim = pos_embd_dim  # default is 25
     hidden_dim = 125
     MLP_inner_dim = 100
     epochs = epochs
@@ -576,7 +576,7 @@ def main(pos_embd_dim, min_freq, weight_dacay, epochs):
 if __name__ == "__main__":
     ### one run option ###
     epochs = 15
-    pos_embd_dim = 50  # default is 50
+    pos_embd_dim = 25  # default is 50
     min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     weight_decay = 0.0
 
@@ -601,14 +601,6 @@ if __name__ == "__main__":
         # use_pre_trained = False
         # num_layers of LSTM
 
-# import cProfile
-#
-# PROFFILE = 'prof.profile'
-# cProfile.run('main()', PROFFILE)
-# import pstats
-#
-# p = pstats.Stats(PROFFILE)
-# p.sort_stats('tottime').print_stats(200)
 
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
