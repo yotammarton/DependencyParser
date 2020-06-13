@@ -478,7 +478,7 @@ def main():
     learning_rate = 0.01
     dropout_layers_probability = 0.0
     weight_decay = 0.0
-    alpha = 0.25
+    alpha = 0.4
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
