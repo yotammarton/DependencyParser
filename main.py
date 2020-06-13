@@ -471,8 +471,9 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.plot(test_accuracy_list, c="orange", label="Test accuracy")
     plt.plot(train_accuracy_list, 'bo', markersize=4)
     plt.plot(test_accuracy_list, 'o', color='orange', markersize=4)
-    plt.xlim(left=-0.05)
+    plt.xlim(left=0)
     plt.ylim((min_acc * 0.9, 1))
+    plt.grid(linewidth=1)
     plt.title("Train and test accuracies along epochs")
     plt.xlabel("Epochs")
     plt.ylabel("Accuracy")
@@ -481,13 +482,13 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
     max_loss = max(max(train_loss_list), max(test_loss_list))
-    print(max_loss)
     plt.plot(train_loss_list, c="blue", label="Train loss")
     plt.plot(test_loss_list, c="orange", label="Test loss")
     plt.plot(train_loss_list, 'bo', markersize=4)
     plt.plot(test_loss_list, 'o', color='orange', markersize=4)
-    plt.xlim(left=-0.05)
+    plt.xlim(left=0)
     plt.ylim((0, max_loss*1.1))
+    plt.grid(linewidth=1)
     plt.title("Train and test losses along epochs")
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
@@ -496,67 +497,67 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = 25
-    hidden_dim = 125
-    MLP_inner_dim = 100
-    epochs = 30
-    learning_rate = 0.01
-    dropout_layers_probability = 0.0
-    weight_decay = 0.0
-    alpha = 0.4
-    use_pre_trained = False
-    vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
-    path_train = "train.labeled"
-    path_test = "test.labeled"
-
-    run_description = f"KiperwasserDependencyParser\n" \
-                      f"-------------------------------------------------------------------------------------------\n" \
-                      f"word_embd_dim = {word_embd_dim}\n" \
-                      f"pos_embd_dim = {pos_embd_dim}\n" \
-                      f"hidden_dim = {hidden_dim}\n" \
-                      f"MLP_inner_dim = {MLP_inner_dim}\n" \
-                      f"epochs = {epochs}\n" \
-                      f"learning_rate = {learning_rate}\n" \
-                      f"dropout_layers_probability = {dropout_layers_probability}\n" \
-                      f"weight_decay = {weight_decay}\n" \
-                      f"alpha = {alpha}\n" \
-                      f"use_pre_trained = {use_pre_trained}\n" \
-                      f"vectors = {vectors}\n" \
-                      f"path_train = {path_train}\n" \
-                      f"path_test = {path_test}\n"
-
-    current_machine_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))
-    print(f"{current_machine_date_time}\n"
-          f"{run_description}")
-
-    path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
-
-    """TRAIN DATA"""
-    train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
-    train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
-                              word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
-                              test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
-    train_dataloader = DataLoader(train, shuffle=True)
-    model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
-
-    """TEST DATA"""
-
-    test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
-                             test=[train.word_idx_mappings, train.pos_idx_mappings])
-    test_dataloader = DataLoader(test, shuffle=False)
-
-    """TRAIN THE PARSER ON TRAIN DATA"""
-    train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
-        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha)
-
-    print(f'\ntrain_accuracy_list = {train_accuracy_list}'
-          f'\ntrain_loss_list = {train_loss_list}'
-          f'\ntest_accuracy_list = {test_accuracy_list}'
-          f'\ntest_loss_list = {test_loss_list}')
-
-    """SAVE MODEL"""
-    torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
+    # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    # pos_embd_dim = 25
+    # hidden_dim = 125
+    # MLP_inner_dim = 100
+    # epochs = 30
+    # learning_rate = 0.01
+    # dropout_layers_probability = 0.0
+    # weight_decay = 0.0
+    # alpha = 0.4
+    # use_pre_trained = False
+    # vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
+    # path_train = "train.labeled"
+    # path_test = "test.labeled"
+    #
+    # run_description = f"KiperwasserDependencyParser\n" \
+    #                   f"-------------------------------------------------------------------------------------------\n" \
+    #                   f"word_embd_dim = {word_embd_dim}\n" \
+    #                   f"pos_embd_dim = {pos_embd_dim}\n" \
+    #                   f"hidden_dim = {hidden_dim}\n" \
+    #                   f"MLP_inner_dim = {MLP_inner_dim}\n" \
+    #                   f"epochs = {epochs}\n" \
+    #                   f"learning_rate = {learning_rate}\n" \
+    #                   f"dropout_layers_probability = {dropout_layers_probability}\n" \
+    #                   f"weight_decay = {weight_decay}\n" \
+    #                   f"alpha = {alpha}\n" \
+    #                   f"use_pre_trained = {use_pre_trained}\n" \
+    #                   f"vectors = {vectors}\n" \
+    #                   f"path_train = {path_train}\n" \
+    #                   f"path_test = {path_test}\n"
+    #
+    # current_machine_date_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(time.time())))
+    # print(f"{current_machine_date_time}\n"
+    #       f"{run_description}")
+    #
+    # path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
+    #
+    # """TRAIN DATA"""
+    # train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
+    # train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
+    #                           word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
+    #                           test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
+    # train_dataloader = DataLoader(train, shuffle=True)
+    # model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
+    #
+    # """TEST DATA"""
+    #
+    # test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
+    #                          test=[train.word_idx_mappings, train.pos_idx_mappings])
+    # test_dataloader = DataLoader(test, shuffle=False)
+    #
+    # """TRAIN THE PARSER ON TRAIN DATA"""
+    # train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
+    #     train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha)
+    #
+    # print(f'\ntrain_accuracy_list = {train_accuracy_list}'
+    #       f'\ntrain_loss_list = {train_loss_list}'
+    #       f'\ntest_accuracy_list = {test_accuracy_list}'
+    #       f'\ntest_loss_list = {test_loss_list}')
+    #
+    # """SAVE MODEL"""
+    # torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
 
     """PLOT GRAPHS"""
     train_accuracy_list = [0.89, 0.89, 0.90, 0.93, 0.95, 0.94, 0.93]
