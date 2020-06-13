@@ -500,7 +500,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = 50
+    pos_embd_dim = 100
     hidden_dim = 125
     MLP_inner_dim = 100
     epochs = 30
