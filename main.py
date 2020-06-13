@@ -84,7 +84,7 @@ class DataReader:
 
 class DependencyDataset(Dataset):
     def __init__(self, path: str, word_dict=None, pos_dict=None, word_embd_dim=None, pos_embd_dim=None,
-                 test=None, use_pre_trained=True, pre_trained_vectors_name: str = None):
+                 test=None, use_pre_trained=True, pre_trained_vectors_name: str = None, min_freq=1):
         """
         :param path: path to train / test file
         :param word_dict: defaultdict(<class 'int'>, {'Pierre': 1, 'Vinken': 2, ',': 6268,...}
@@ -114,7 +114,7 @@ class DependencyDataset(Dataset):
             else:
                 # create Vocab variable just for the ease of using the special tokens and the other nice features
                 # like it will create the word_idx_mapping by itself
-                vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=1)
+                vocab = Vocab(Counter(word_dict), vectors=None, specials=SPECIAL_TOKENS, min_freq=min_freq)
 
                 # set rand vectors and get the weights (the vector embeddings themselves)
                 words_embeddings_tensor = nn.Embedding(len(vocab.stoi), word_embd_dim).weight.data
@@ -500,7 +500,7 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 def main():
     word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = 100
+    pos_embd_dim = 50
     hidden_dim = 125
     MLP_inner_dim = 100
     epochs = 30
@@ -508,6 +508,7 @@ def main():
     dropout_layers_probability = 0.0
     weight_decay = 0.0
     alpha = 0.0  # 0.0 means no word dropout
+    min_freq = 20  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -524,6 +525,7 @@ def main():
                       f"dropout_layers_probability = {dropout_layers_probability}\n" \
                       f"weight_decay = {weight_decay}\n" \
                       f"alpha = {alpha}\n" \
+                      f"min_freq = {min_freq}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
                       f"path_train = {path_train}\n" \
@@ -538,8 +540,8 @@ def main():
     """TRAIN DATA"""
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
     train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
-                              word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim,
-                              test=False, use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors)
+                              word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim, test=False,
+                              use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=20)
     train_dataloader = DataLoader(train, shuffle=True)
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
 
