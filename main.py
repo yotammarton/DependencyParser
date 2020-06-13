@@ -292,7 +292,7 @@ class KiperwasserDependencyParser(nn.Module):
         return MLP_scores_mat_new
 
 
-def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay):
+def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha):
     start = time.time()
     total_test_time = 0
 
@@ -324,8 +324,10 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
         # print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
         # print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
+        data = list(enumerate(train_dataloader))  # save this so we can modify it to introduce word-dropout
+        word_dropout(model, data, alpha=alpha)
 
-        for batch_idx, input_data in enumerate(train_dataloader):
+        for batch_idx, input_data in data:
             i += 1
             # size = [sentence_length + 1, sentence_length + 1]
             MLP_scores_mat = model(input_data)  # forward activated inside
@@ -384,6 +386,43 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
     return train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list
 
 
+def word_dropout(model, data, alpha=0.25):
+    """
+    During training, we employ a variant of word dropout (Iyyer et al., 2015), and replace a word with
+    the unknown-word symbol with probability that is inversely proportional to the frequency of the word.
+    A word w appearing #(w) times in the training corpus is replaced with the unknown symbol with probability
+    p(w) = alpha / (tf(w) + alpha). where tf(w) is the number of appearances of term w in the train corpus
+    :param model: nn.Module
+    :param data: the train data for the current epoch
+    :param alpha: hyper parameter
+    :return: None. changes  'data' (only for the current epoch).
+    """
+    word_counter_dict = Counter(model.dataset.datareader.word_dict)
+    idx_word_dict = {v: k for k, v in model.dataset.word_idx_mappings.items()}
+    idx_dropout_prob_dict = dict()
+    for idx, word in idx_word_dict.items():
+        # we will assign the probability of each word (it's index) to be dropped
+        if word not in word_counter_dict:  # e.g. any special token (in practice - only for <root_token>)
+            idx_dropout_prob_dict[idx] = 0
+        else:  # word is a word in our dictionary of train words
+            idx_dropout_prob_dict[idx] = alpha / (word_counter_dict[word] + alpha)
+
+    for _, sample_tensor in data:
+        sentence_tensor = sample_tensor[0][0]
+        sentence_dropout_probabilities = torch.tensor([idx_dropout_prob_dict[int(idx)]
+                                                       for idx in sentence_tensor])
+        n = len(sentence_tensor)
+        # based on every word-drop out probabilities create Bernoulli vector
+        bernoulli_toss = torch.bernoulli(sentence_dropout_probabilities)  # 1 = dropout, 0 = no dropout
+        # tensor with [1, 1, 1, 1, ...] (which is the index of '<unk_token>')
+        unk_token_tensor = torch.empty(n, dtype=torch.int64). \
+            fill_(model.dataset.word_idx_mappings['<unk_token>'])
+
+        sample_tensor[0][0] = torch.where(bernoulli_toss == 0,  # condition
+                                          sentence_tensor,  # if condition true take element from this tensor
+                                          unk_token_tensor)  # else take from this tensor
+
+
 """Advanced Model - GoldMart = Goldstein-Martin"""
 
 
@@ -439,6 +478,7 @@ def main():
     learning_rate = 0.01
     dropout_layers_probability = 0.0
     weight_decay = 0.0
+    alpha = 0.25
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -454,6 +494,7 @@ def main():
                       f"learning_rate = {learning_rate}\n" \
                       f"dropout_layers_probability = {dropout_layers_probability}\n" \
                       f"weight_decay = {weight_decay}\n" \
+                      f"alpha = {alpha}\n" \
                       f"use_pre_trained = {use_pre_trained}\n" \
                       f"vectors = {vectors}\n" \
                       f"path_train = {path_train}\n" \
@@ -481,7 +522,7 @@ def main():
 
     """TRAIN THE PARSER ON TRAIN DATA"""
     train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
-        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay)
+        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha)
 
     print(f'\ntrain_accuracy_list = {train_accuracy_list}'
           f'\ntrain_loss_list = {train_loss_list}'
@@ -510,7 +551,6 @@ if __name__ == "__main__":
     # p = pstats.Stats(PROFFILE)
     # p.sort_stats('tottime').print_stats(200)
 
-# TODO ADD WORD DROP OUT LIKE IN ARTICLE
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
 # TODO LSTM ON CHARS
