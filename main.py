@@ -20,6 +20,7 @@ from chu_liu_edmonds import decode_mst
 ROOT_TOKEN = "<root_token>"
 ROOT_POS = "<root_pos>"
 UNKNOWN_TOKEN = "<unk_token>"
+# UNKNOWN_POS = "<unk_pos>" TODO? Nadav says we should concat the unkown pos to the unknown token
 SPECIAL_TOKENS = [ROOT_TOKEN, UNKNOWN_TOKEN]
 
 
@@ -410,7 +411,7 @@ def word_dropout(model, data, alpha=0.25):
     for _, sample_tensor in data:
         sentence_tensor = sample_tensor[0][0]
         sentence_dropout_probabilities = torch.tensor([idx_dropout_prob_dict[int(idx)]
-                                                       for idx in sentence_tensor])
+                                                       for idx in sentence_tensor], dtype=torch.float32)
         n = len(sentence_tensor)
         # based on every word-drop out probabilities create Bernoulli vector
         bernoulli_toss = torch.bernoulli(sentence_dropout_probabilities)  # 1 = dropout, 0 = no dropout
@@ -508,7 +509,7 @@ def main():
     dropout_layers_probability = 0.0
     weight_decay = 0.0
     alpha = 0.0  # 0.0 means no word dropout
-    min_freq = 20  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    min_freq = 10  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -541,7 +542,7 @@ def main():
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
     train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
                               word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim, test=False,
-                              use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=20)
+                              use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=min_freq)
     train_dataloader = DataLoader(train, shuffle=True)
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, dropout_layers_probability)
 
@@ -564,11 +565,7 @@ def main():
     torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
 
     """PLOT GRAPHS"""
-    train_accuracy_list = [0.89, 0.89, 0.90, 0.93, 0.95, 0.94, 0.93]
-    test_accuracy_list = [0.80, 0.86, 0.88, 0.90, 0.94, 0.93, 0.91]
-    train_loss_list = [0.0564, 0.0464, 0.0334, 0.0304, 0.0165, 0.0200, 0.0143]
-    test_loss_list = [0.1564, 0.1164, 0.0634, 0.0404, 0.0200, 0.0350, 0.0543]
-    plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list)
+    # plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list)
 
     # """EVALUATE ON TEST DATA"""
     # evaluate(model, test_dataloader)
