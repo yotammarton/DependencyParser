@@ -576,13 +576,14 @@ def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
 
 if __name__ == "__main__":
     ### one run option ###
-    epochs = 15
-    pos_embd_dim = 50 # default is 50
-    min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
-    weight_decay = 0.0
-
-    main(pos_embd_dim, min_freq, weight_decay, epochs)
-    exit(3)
+    # epochs = 15
+    # pos_embd_dim = 50 # default is 50
+    # min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    # weight_decay = 0.0
+    # BiLSTM_layers = 2
+    #
+    # main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
+    # exit(3)
 
     ### combinations run option ###
     for epochs in [15]:
