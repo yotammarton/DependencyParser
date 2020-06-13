@@ -483,14 +483,13 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.legend(loc='lower right')
     plt.show()
 
-
     max_loss = max(max(train_loss_list), max(test_loss_list))
     plt.plot(indices_list, train_loss_list, '-', c="blue", label="Train loss")
     plt.plot(indices_list, test_loss_list, '-', c="orange", label="Test loss")
     plt.plot(indices_list, train_loss_list, 'bo', markersize=4)
     plt.plot(indices_list, test_loss_list, 'o', color='orange', markersize=4)
     plt.xlim(left=1)
-    plt.ylim((0, max_loss*1.1))
+    plt.ylim((0, max_loss * 1.1))
     plt.grid(linewidth=1)
     plt.title("Train and test losses along epochs")
     plt.xlabel("Epochs")
