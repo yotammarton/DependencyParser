@@ -499,13 +499,13 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.show()
 
 
-def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
+def main(pos_embd_dim, min_freq, weight_dacay, word_embd_dim, BiLSTM_layers):
 
-    word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    word_embd_dim = word_embd_dim  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = pos_embd_dim  # default is 25
     hidden_dim = 125
     MLP_inner_dim = 100
-    epochs = epochs
+    epochs = 15
     learning_rate = 0.01
     dropout_layers_probability = 0.0
     weight_decay = weight_dacay
@@ -573,6 +573,30 @@ def main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers):
     # """EVALUATE ON TEST DATA"""
     # evaluate(model, test_dataloader)
 
+def plot_graphs11111(test0_accuracy_list, test01_accuracy_list,test1_accuracy_list, test2_accuracy_list, test3_accuracy_list):
+    indices_list = [(1 + i) for i in range(len(test1_accuracy_list))]
+    min_acc = min(min(test1_accuracy_list), min(test2_accuracy_list))
+    max_acc = max(max(test1_accuracy_list), max(test2_accuracy_list))
+    plt.plot(indices_list, test0_accuracy_list, '-', c="yellow", label="Test100 accuracy")
+    plt.plot(indices_list, test01_accuracy_list, '-', c="green", label="Test75 accuracy")
+    plt.plot(indices_list, test1_accuracy_list, '-', c="blue", label="Test50 accuracy")
+    plt.plot(indices_list, test2_accuracy_list, '-', c="orange", label="Test25 accuracy")
+    plt.plot(indices_list, test3_accuracy_list, '-', c="red", label="Test15 accuracy")
+
+    plt.plot(indices_list, test0_accuracy_list, 'o', color='yellow', markersize=4)
+    plt.plot(indices_list, test01_accuracy_list, 'o', color='green', markersize=4)
+    plt.plot(indices_list, test1_accuracy_list, 'bo', markersize=4)
+    plt.plot(indices_list, test2_accuracy_list, 'o', color='orange', markersize=4)
+    plt.plot(indices_list, test3_accuracy_list, 'ro', markersize=4)
+
+    plt.xlim(left=1)
+    plt.ylim((0.85, 0.93))
+    plt.yticks(np.arange(0.85, 0.93, step=0.01))  # Set label locations.
+    plt.grid(linewidth=1)
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend(loc='lower right')
+    plt.show()
 
 if __name__ == "__main__":
     ### one run option ###
@@ -586,12 +610,34 @@ if __name__ == "__main__":
     # exit(3)
 
     ### combinations run option ###
-    for epochs in [15]:
-        for pos_embd_dim in [15, 25, 50, 75, 100]:
-            for min_freq in [2, 3, 5, 10]:
-                for weight_dacay in [1e-5, 1e-6, 1e-7, 0.0]:
-                    for BiLSTM_layers in [2, 3, 4]:
-                        main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
+    # for epochs in [15]:
+    #     for pos_embd_dim in [15, 25, 50, 75, 100]:
+    #         for min_freq in [2, 3, 5, 10]:
+    #             for weight_dacay in [1e-5, 1e-6, 1e-7, 0.0]:
+    #                 for BiLSTM_layers in [2, 3, 4]:
+    #                     main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
+
+    # we keep these ones ##
+    for word_embd_dim in [100, 200, 300]:
+        for pos_embd_dim in [25, 50, 75, 100]:
+            for min_freq in [1, 2, 3]:
+                for weight_dacay in [1e-4, 1e-5]:
+                    for BiLSTM_layers in [2, 3]:
+                        main(pos_embd_dim, min_freq, weight_dacay, word_embd_dim, BiLSTM_layers)
+
+    # TODO gal do not touch
+    # test0_accuracy_list = [0.8727104966642354, 0.8893802954456296, 0.897930519999827, 0.8985994775363773, 0.9024147626896759, 0.9032315328233659, 0.9057396530796497, 0.9041129008595366, 0.9074323189898621, 0.9085594565181768, 0.9068517342149139, 0.9087980613642939, 0.9079916950507139, 0.9077482190613283, 0.9115374263674864]
+    #
+    # test01_accuracy_list = [0.8745952303818547, 0.891846345128242, 0.9000240995082567, 0.8975676189017281, 0.9023449139842078, 0.8996635935558741, 0.9031568997647944, 0.903084222231001, 0.904563341273347, 0.9040021500833616, 0.9057205887688459, 0.9087909525565078, 0.9036278991177055, 0.9055740197581077, 0.9080697350369914]
+    #
+    # test1_accuracy_list = [0.8724469579477907, 0.8931250160250392, 0.9012826544100603, 0.8971577191400117, 0.9025055033866338, 0.9039649728566629, 0.9068932193480703, 0.9030561335556132, 0.9077176005582834, 0.908902367632979, 0.9066836905249072, 0.9106718023398801, 0.9085296473936154, 0.9062363725260917, 0.9072766937607392]
+    # test2_accuracy_list = [0.8693521109877581, 0.8865615967570638, 0.8962231260051488, 0.9005227467073518, 0.9043345219473015, 0.9039425811643059, 0.9073953874092233, 0.9052128700217318, 0.9037999714323558, 0.9047589755353243, 0.9041192373737272, 0.9022990229207869, 0.9053757493664162, 0.9056269514471683, 0.9064894272351405]
+    # test3_accuracy_list = [0.847536410303437, 0.8883146342123204, 0.8887979055703453, 0.8952708644741162,
+    #                       0.9035886102845575, 0.902515337662117, 0.9010029604148996, 0.9072962848887507,
+    #                       0.9066462405798138, 0.9040775390282072, 0.9038635140727882, 0.9069898312647464,
+    #                       0.9072213150132946, 0.9114276024527281, 0.9083087251798692]
+    #
+    # plot_graphs11111(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list, test3_accuracy_list)
 
         # TODO ADD THESE MAYBE
         # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
@@ -603,6 +649,7 @@ if __name__ == "__main__":
         # alpha = 0.0  # 0.0 means no word dropout
         # use_pre_trained = False
         # num_layers of LSTM
+
 
 
 # TODO UNK_TOKEN_PER-POS - for every POS create token
