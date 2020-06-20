@@ -254,7 +254,7 @@ class KiperwasserDependencyParser(nn.Module):
         # self.edge_scorer[i].weight || i in [1, 2, 3]
 
     def forward(self, sample):  # this is required function. can't change its name
-        word_idx_tensor, pos_idx_tensor, true_tree_heads = sample
+        word_idx_tensor, pos_idx_tensor = sample[0], sample[1]
         original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
 
         # TODO implement word-dropout like in the article. and later also embedding dropout like they suggest with p=0.5
@@ -474,6 +474,33 @@ def evaluate(model, dataloader):
     return acc, loss_value
 
 
+def tag_file_save_output(model, dataloader, original_unlabeled_file, result_path):
+    # read the whole file we wish to tag to list of lines
+    with open(original_unlabeled_file) as file_to_tag:
+        lines = file_to_tag.readlines()
+
+    # inference and write output to file in the wanted format
+    with open(result_path, 'w') as result:
+        with torch.no_grad():
+            for batch_idx, input_data in enumerate(dataloader):
+                MLP_scores_mat = model(input_data)
+
+                # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
+                predicted_tree = decode_mst(MLP_scores_mat.data.cpu().numpy().T, length=MLP_scores_mat.shape[0],
+                                            has_labels=False)[0]
+
+                for head in predicted_tree[1:]:
+                    original_line = lines[0]
+                    tabs_locs = [idx for idx, char in enumerate(original_line) if char == "\t"]
+                    # search for the 6th '\t'
+                    line_to_save = original_line[:tabs_locs[5] + 1] + str(head) + original_line[tabs_locs[6]:]
+                    result.write(line_to_save)
+                    del lines[0]
+
+                result.write(lines[0])
+                del lines[0]  # the separating \n
+    # lines should be empty list by now
+
 def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list):
     indices_list = [(1 + i) for i in range(len(train_accuracy_list))]
     min_acc = min(min(train_accuracy_list), min(test_accuracy_list))
@@ -508,7 +535,6 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main(pos_embd_dim, min_freq, weight_dacay, word_embd_dim, BiLSTM_layers):
-
     word_embd_dim = word_embd_dim  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = pos_embd_dim  # default is 25
     hidden_dim = 125
@@ -581,7 +607,9 @@ def main(pos_embd_dim, min_freq, weight_dacay, word_embd_dim, BiLSTM_layers):
     # """EVALUATE ON TEST DATA"""
     # evaluate(model, test_dataloader)
 
-def plot_graphs11111(test0_accuracy_list, test01_accuracy_list,test1_accuracy_list, test2_accuracy_list, test3_accuracy_list):
+
+def plot_graphs11111(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list,
+                     test3_accuracy_list):
     indices_list = [(1 + i) for i in range(len(test1_accuracy_list))]
     min_acc = min(min(test1_accuracy_list), min(test2_accuracy_list))
     max_acc = max(max(test1_accuracy_list), max(test2_accuracy_list))
@@ -605,6 +633,7 @@ def plot_graphs11111(test0_accuracy_list, test01_accuracy_list,test1_accuracy_li
     plt.ylabel("Accuracy")
     plt.legend(loc='lower right')
     plt.show()
+
 
 if __name__ == "__main__":
     ### one run option ###
@@ -647,18 +676,16 @@ if __name__ == "__main__":
     #
     # plot_graphs11111(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list, test3_accuracy_list)
 
-        # TODO ADD THESE MAYBE
-        # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-        # hidden_dim = 125
-        # MLP_inner_dim = 100
-        # epochs = 30
-        # learning_rate = 0.01
-        # dropout_layers_probability = 0.0
-        # alpha = 0.0  # 0.0 means no word dropout
-        # use_pre_trained = False
-        # num_layers of LSTM
-
-
+    # TODO ADD THESE MAYBE
+    # word_embd_dim = 100  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
+    # hidden_dim = 125
+    # MLP_inner_dim = 100
+    # epochs = 30
+    # learning_rate = 0.01
+    # dropout_layers_probability = 0.0
+    # alpha = 0.0  # 0.0 means no word dropout
+    # use_pre_trained = False
+    # num_layers of LSTM
 
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
