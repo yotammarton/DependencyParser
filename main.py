@@ -501,6 +501,7 @@ def tag_file_save_output(model, dataloader, original_unlabeled_file, result_path
                 del lines[0]  # the separating \n
     # lines should be empty list by now
 
+
 def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list):
     indices_list = [(1 + i) for i in range(len(train_accuracy_list))]
     min_acc = min(min(train_accuracy_list), min(test_accuracy_list))
@@ -535,7 +536,6 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main(pos_embd_dim, min_freq, word_embd_dim, BiLSTM_layers):
-
     word_embd_dim = word_embd_dim  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
     pos_embd_dim = pos_embd_dim  # default is 25
     hidden_dim = 125
@@ -608,7 +608,9 @@ def main(pos_embd_dim, min_freq, word_embd_dim, BiLSTM_layers):
     # """EVALUATE ON TEST DATA"""
     # evaluate(model, test_dataloader)
 
-def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list,test1_accuracy_list, test2_accuracy_list, test3_accuracy_list):
+
+def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list,
+                                      test2_accuracy_list, test3_accuracy_list):
     indices_list = [(1 + i) for i in range(len(test1_accuracy_list))]
     min_acc = min(min(test1_accuracy_list), min(test2_accuracy_list))
     max_acc = max(max(test1_accuracy_list), max(test2_accuracy_list))
@@ -632,6 +634,7 @@ def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list,
     plt.ylabel("Accuracy")
     plt.legend(loc='lower right')
     plt.show()
+
 
 if __name__ == "__main__":
     ### one run option ###
@@ -671,7 +674,6 @@ if __name__ == "__main__":
     main(75, 2, 300, 2)
     main(100, 3, 300, 3)
 
-
     # TODO gal do not touch
     # test0_accuracy_list = [0.8727104966642354, 0.8893802954456296, 0.897930519999827, 0.8985994775363773, 0.9024147626896759, 0.9032315328233659, 0.9057396530796497, 0.9041129008595366, 0.9074323189898621, 0.9085594565181768, 0.9068517342149139, 0.9087980613642939, 0.9079916950507139, 0.9077482190613283, 0.9115374263674864]
     # test01_accuracy_list = [0.8745952303818547, 0.891846345128242, 0.9000240995082567, 0.8975676189017281, 0.9023449139842078, 0.8996635935558741, 0.9031568997647944, 0.903084222231001, 0.904563341273347, 0.9040021500833616, 0.9057205887688459, 0.9087909525565078, 0.9036278991177055, 0.9055740197581077, 0.9080697350369914]
@@ -680,16 +682,14 @@ if __name__ == "__main__":
     # test3_accuracy_list = [0.847536410303437, 0.8883146342123204, 0.8887979055703453, 0.8952708644741162,
     # plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list, test3_accuracy_list)
 
-        # TODO ADD THESE MAYBE
-        # hidden_dim = 125
-        # MLP_inner_dim = 100
-        # epochs = 30
-        # learning_rate = 0.01
-        # dropout_layers_probability = 0.0
-        # alpha = 0.0  # 0.0 means no word dropout
-        # use_pre_trained = False
-
-
+    # TODO ADD THESE MAYBE
+    # hidden_dim = 125
+    # MLP_inner_dim = 100
+    # epochs = 30
+    # learning_rate = 0.01
+    # dropout_layers_probability = 0.0
+    # alpha = 0.0  # 0.0 means no word dropout
+    # use_pre_trained = False
 
 # TODO UNK_TOKEN_PER-POS - for every POS create token
 # TODO OOV - maybe try lower or upper
