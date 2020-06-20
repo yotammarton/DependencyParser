@@ -187,6 +187,14 @@ class DependencyDataset(Dataset):
             words, tags, heads = sample
             words_idx_list = [self.word_idx_mappings[word] if word in self.word_idx_mappings
                               else self.word_idx_mappings[UNKNOWN_TOKEN] for word in words]
+
+            # TODO DEL
+            # for word in words:
+            #     if word not in self.word_idx_mappings and \
+            #         (word[0].lower() + word[1:] in self.word_idx_mappings or
+            #          word[0].upper() + word[1:] in self.word_idx_mappings):
+            #         print(self.file, word)
+
             pos_idx_list = [self.pos_idx_mappings[tag] for tag in tags]
 
             # we don't want to activate grads for the indexes because these are not parameters
