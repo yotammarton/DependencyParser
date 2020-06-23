@@ -9,9 +9,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data.dataloader import DataLoader
 import re
-import pickle
 import matplotlib.pyplot as plt
-import seaborn as sns
 import time
 import os
 from chu_liu_edmonds import decode_mst
@@ -20,14 +18,13 @@ from chu_liu_edmonds import decode_mst
 ROOT_TOKEN = "<root_token>"
 ROOT_POS = "<root_pos>"
 UNKNOWN_TOKEN = "<unk_token>"
-# UNKNOWN_POS = "<unk_pos>" TODO? Nadav says we should concat the unkown pos to the unknown token
 SPECIAL_TOKENS = [ROOT_TOKEN, UNKNOWN_TOKEN]
 
 
 # returns {'The': 15374, 'I': 1556, 'Boeing': 85....}, {'DT': 17333, 'NNP': 5371, 'VBG': 5353....}
 def get_vocabs_counts(list_of_paths):
     """
-        create dictionary with number of appearances (counts) of each word and each tag
+        creates dictionary with number of appearances (counts) of each word and each tag
     """
     word_dict = defaultdict(int)
     pos_dict = defaultdict(int)
@@ -65,7 +62,7 @@ class DataReader:
                 else:
                     splited_values = re.split('\t', line)
                     # m = int(splited_values[0])
-                    h = int(splited_values[6])
+                    h = int(splited_values[6]) if splited_values[6] != '_' else '_'
                     word = splited_values[1]
                     pos = splited_values[3]
 
@@ -73,7 +70,7 @@ class DataReader:
                     tags.append(pos)
                     heads.append(h)
 
-                    # e.g.  # TODO GAL we have special embedding for root, and another one for unknown?
+                    # e.g.
                     # ['<root_token>', 'It', 'has', 'no', 'on', 'our', 'work', 'force', 'today', '.'] len = 10
                     # ['<root_pos>', 'PRP', 'VBZ', 'DT', 'NN', 'PRP$', 'NN', 'NN', 'NN', '.']         len = 10
                     # ['2', '0', '4', '2', '4', '8', '8', '5', '2']                                   len = 9
@@ -85,7 +82,7 @@ class DataReader:
 
 class DependencyDataset(Dataset):
     def __init__(self, path: str, word_dict=None, pos_dict=None, word_embd_dim=None, pos_embd_dim=None,
-                 test=None, use_pre_trained=True, pre_trained_vectors_name: str = None, min_freq=1):
+                 test=None, use_pre_trained=True, pre_trained_vectors_name: str = None, min_freq=1, comp_mode=False):
         """
         :param path: path to train / test file
         :param word_dict: defaultdict(<class 'int'>, {'Pierre': 1, 'Vinken': 2, ',': 6268,...}
@@ -101,6 +98,7 @@ class DependencyDataset(Dataset):
         self.file = path
         self.datareader = DataReader(self.file, word_dict, pos_dict)
         self.vocab_size = len(self.datareader.word_dict)
+        self.comp_mode = comp_mode
         if test:
             # no need to train vectors or create them, and also not vocabulary
             # that's because we use the vectors and vocabulary from train
@@ -155,8 +153,6 @@ class DependencyDataset(Dataset):
                            'glove.6B.300d']:
             raise ValueError("pre-trained embedding vectors not found")
         glove = Vocab(Counter(word_dict), vectors=vectors, specials=SPECIAL_TOKENS, min_freq=1)
-        # TODO GAL what the glove do with the specials? what the counter(word_dict) takes?
-        # TODO YOTAM I think we should make something similar if we train by ourselves
         return glove.stoi, glove.itos, glove.vectors
 
     # return idx mapping for POS tags
@@ -188,7 +184,7 @@ class DependencyDataset(Dataset):
             words_idx_list = [self.word_idx_mappings[word] if word in self.word_idx_mappings
                               else self.word_idx_mappings[UNKNOWN_TOKEN] for word in words]
 
-            # TODO DEL
+            # TODO try to see if this helps
             # for word in words:
             #     if word not in self.word_idx_mappings and \
             #         (word[0].lower() + word[1:] in self.word_idx_mappings or
@@ -200,7 +196,10 @@ class DependencyDataset(Dataset):
             # we don't want to activate grads for the indexes because these are not parameters
             sentence_word_idx_list.append(torch.tensor(words_idx_list, dtype=torch.long, requires_grad=False))
             sentence_pos_idx_list.append(torch.tensor(pos_idx_list, dtype=torch.long, requires_grad=False))
-            sentence_heads_list.append(torch.tensor(heads, dtype=torch.long, requires_grad=False))
+            if self.comp_mode:  # no heads
+                sentence_heads_list.append([])
+            else:
+                sentence_heads_list.append(torch.tensor(heads, dtype=torch.long, requires_grad=False))
 
         return {i: sample_tuple for i, sample_tuple in
                 enumerate(zip(sentence_word_idx_list,  # its just indexes. next phase will be convert it to embeddings
@@ -239,8 +238,7 @@ class KiperwasserDependencyParser(nn.Module):
 
         # Implement a sub-module to calculate the scores for all possible edges in sentence dependency graph
         # MLP(x) = W2 * tanh(W1 * x + b1) + b2
-        # W1 - Matrix (MLP_inner_dim x 500) || W2, b1 - Vectors (MLP_inner_dim) || b2 - Scalar
-        # TODO possible change to (500, dim) , (dim, 1) - we can control the dimension
+        # W1 - Matrix (MLP_inner_dim x 4 * hidden_dim) || W2, b1 - Vectors (MLP_inner_dim) || b2 - Scalar
         self.edge_scorer = nn.Sequential(
             # W1 * x + b1
             nn.Linear(4 * hidden_dim, MLP_inner_dim),
@@ -249,15 +247,10 @@ class KiperwasserDependencyParser(nn.Module):
             # W2 * tanh(W1 * x + b1) + b2
             nn.Linear(MLP_inner_dim, 1)
         )
-        # TODO DEL
-        # how to access weights:
-        # self.edge_scorer[i].weight || i in [1, 2, 3]
 
     def forward(self, sample):  # this is required function. can't change its name
         word_idx_tensor, pos_idx_tensor = sample[0], sample[1]
         original_sentence_in_words = [self.dataset.idx_word_mappings[w_idx] for w_idx in word_idx_tensor[0]]
-
-        # TODO implement word-dropout like in the article. and later also embedding dropout like they suggest with p=0.5
 
         # Pass word_idx and pos_idx through their embedding layers
         # size = [batch_size, seq_length, word_dim]
@@ -275,21 +268,7 @@ class KiperwasserDependencyParser(nn.Module):
         lstm_out, _ = self.encoder(word_pos_embeddings)
         n = lstm_out.shape[1]
 
-        # TODO old version
-        """
-        # Get score for each possible edge in the parsing graph, construct score matrix
-        # n = original sentence length + 1
-        n = lstm_out.shape[1]
-
-        MLP_scores_mat = torch.zeros((n, n))  # modifiers are rows, heads are cols
-        for m in range(n):
-            modifier_vector = lstm_out.data[0][m]
-            for h in range(n):
-                head_vector = lstm_out.data[0][h]  # 0 because the batch size = 1 always in our case
-                h_m_concat = torch.cat((head_vector, modifier_vector))
-                MLP_score = self.edge_scorer(h_m_concat)
-                MLP_scores_mat[m][h] = MLP_score
-        """
+        # source: https://discuss.pytorch.org/t/how-to-create-a-combination-of-concatenations-with-two-tensors/28709
         heads = lstm_out[0].unsqueeze(0)
         modifiers = lstm_out[0].unsqueeze(1)
         heads_tmp = heads.repeat(lstm_out[0].shape[0], 1, 1)
@@ -301,9 +280,11 @@ class KiperwasserDependencyParser(nn.Module):
         return MLP_scores_mat_new
 
 
-def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha):
+def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha,
+                             path_to_save_model):
     start = time.time()
-    total_test_time = 0
+    total_evaluate_time = 0
+    max_test_accuracy = 0
 
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -316,7 +297,6 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
     # We will be using a simple SGD optimizer to minimize the loss function
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    # TODO optimize learning rate 'lr'
     acumulate_grad_steps = 50  # This is the actual batch_size, while we officially use batch_size=1
 
     # Training start
@@ -326,15 +306,9 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
     model.zero_grad()
     for epoch in range(epochs):
-        train_acc = 0  # to keep track of accuracy
-        train_loss = 0  # to keep track of the loss value
-        mst_trees_calculated = 0  # keep track of amount of trees calculated to plot the accuracy graph
         i = 0  # keep track of samples processed
-
-        # print(f'word embedding <root token>: {model.word_embedding(torch.tensor([[0]]).to(model.device))}')
-        # print(f'word embedding <unk token>: {model.word_embedding(torch.tensor([[1]]).to(model.device))}')
-        data = list(enumerate(train_dataloader))  # save this so we can modify it to introduce word-dropout
-        word_dropout(model, data, alpha=alpha)
+        data = list(enumerate(train_dataloader))  # save the data so we can modify it to introduce word-dropout
+        word_dropout(model, data, alpha=alpha)  # changes data in-place
 
         for batch_idx, input_data in data:
             i += 1
@@ -351,34 +325,32 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
             loss = loss_function(F.log_softmax(MLP_scores_mat, dim=1), target)
             loss = loss / acumulate_grad_steps
             loss.backward()
-            train_loss += loss.item()
-
-            # calculated sampled tress - only for accuracy calculations during train
-            if i > 0.9 * len(train_dataloader):  # predict trees on 10% of train data
-                # res=[-1, 5, 0, , 4] - always -1 at the beginning because it's '<root>' token in every sentence's start
-                predicted_tree = decode_mst(MLP_scores_mat.cpu().data.numpy().T, length=MLP_scores_mat.shape[0],
-                                            has_labels=False)[0]
-
-                train_acc += sum(gold_heads[0].numpy() == predicted_tree[1:]) / len(gold_heads[0])
-                mst_trees_calculated += 1
 
             # perform optimization step
             if i % acumulate_grad_steps == 0 or i == len(train_dataloader):
                 optimizer.step()
                 model.zero_grad()
 
-        train_loss = acumulate_grad_steps * train_loss / len(train_dataloader)
-        train_acc = train_acc / mst_trees_calculated if mst_trees_calculated != 0 else 0
+        # evaluate at the end of the epoch
+        start_evaluate_time = time.time()
+        # train
+        train_acc, train_loss = evaluate(model, train_dataloader)
         train_loss_list.append(train_loss)
         train_accuracy_list.append(train_acc)
 
-        start_test_time = time.time()
-        # calculate test accuracy >>> skip the next 3 lines if no need to know the test accuracy during training
+        # test
         test_acc, test_loss = evaluate(model, test_dataloader)
         test_accuracy_list.append(test_acc)
         test_loss_list.append(test_loss)
-        stop_test_time = time.time()
-        total_test_time += stop_test_time - start_test_time
+
+        stop_evaluate_time = time.time()
+        total_evaluate_time += stop_evaluate_time - start_evaluate_time
+
+        # Save model if test accuracy is better than before
+        if test_acc > max_test_accuracy:
+            max_test_accuracy = test_acc
+            torch.save(model.state_dict(),
+                       path_to_save_model.replace(':', '-') + f'acc = {test_acc} epoch = {epoch + 1}.pt')
 
         print(f"Epoch {epoch + 1} Completed,\tTrain Loss {train_loss}\t Train Accuracy: {train_acc}\t "
               f"Test Loss {test_loss}\t Test Accuracy: {test_acc}")
@@ -389,9 +361,10 @@ def train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, l
 
     stop = time.time()
 
-    total_train_time = stop - start - total_test_time
+    total_train_time = stop - start - total_evaluate_time
 
-    print(f'\n\n\ntotal_train_time = {int(total_train_time)} SECS \t total_test_time = {int(total_test_time)} SECS')
+    print(f'\n\n\ntotal_train_time = {int(total_train_time)} SECS \t total_evaluate_time (train and test) = '
+          f'{int(total_evaluate_time)} SECS')
     return train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list
 
 
@@ -425,22 +398,11 @@ def word_dropout(model, data, alpha=0.25):
         bernoulli_toss = torch.bernoulli(sentence_dropout_probabilities)  # 1 = dropout, 0 = no dropout
         # tensor with [1, 1, 1, 1, ...] (which is the index of '<unk_token>')
         unk_token_tensor = torch.empty(n, dtype=torch.int64). \
-            fill_(model.dataset.word_idx_mappings['<unk_token>'])
+            fill_(model.dataset.word_idx_mappings[UNKNOWN_TOKEN])
 
         sample_tensor[0][0] = torch.where(bernoulli_toss == 0,  # condition
                                           sentence_tensor,  # if condition true take element from this tensor
                                           unk_token_tensor)  # else take from this tensor
-
-
-"""Advanced Model - GoldMart = Goldstein-Martin"""
-
-
-class GoldMartDependencyParser(nn.Module):
-    pass
-
-
-def train_goldmart_parser():
-    pass
 
 
 def evaluate(model, dataloader):
@@ -505,14 +467,15 @@ def tag_file_save_output(model, dataloader, original_unlabeled_file, result_path
 def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list):
     indices_list = [(1 + i) for i in range(len(train_accuracy_list))]
     min_acc = min(min(train_accuracy_list), min(test_accuracy_list))
-    plt.plot(indices_list, train_accuracy_list, '-', c="blue", label="Train accuracy")
+    plt.plot(indices_list, train_accuracy_list, '-', c="tab:blue", label="Train accuracy")
     # plt.plot(test_accuracy_list, c="orange", label="Test accuracy")
-    plt.plot(indices_list, test_accuracy_list, '-', c="orange", label="Test accuracy")
+    plt.plot(indices_list, test_accuracy_list, '-', c="tab:orange", label="Test accuracy")
 
-    plt.plot(indices_list, train_accuracy_list, 'bo', markersize=4)
-    plt.plot(indices_list, test_accuracy_list, 'o', color='orange', markersize=4)
+    plt.plot(indices_list, train_accuracy_list, 'o', color='tab:blue', markersize=4)
+    plt.plot(indices_list, test_accuracy_list, 'o', color='tab:orange', markersize=4)
     plt.xlim(left=1)
-    plt.ylim((min_acc * 0.9, 1))
+    plt.xticks(np.arange(1, len(indices_list) + 1, step=1))
+    plt.ylim((min_acc * 0.99, 1))
     plt.grid(linewidth=1)
     plt.title("Train and test accuracies along epochs")
     plt.xlabel("Epochs")
@@ -521,12 +484,13 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.show()
 
     max_loss = max(max(train_loss_list), max(test_loss_list))
-    plt.plot(indices_list, train_loss_list, '-', c="blue", label="Train loss")
-    plt.plot(indices_list, test_loss_list, '-', c="orange", label="Test loss")
-    plt.plot(indices_list, train_loss_list, 'bo', markersize=4)
-    plt.plot(indices_list, test_loss_list, 'o', color='orange', markersize=4)
+    plt.plot(indices_list, train_loss_list, '-', c="tab:blue", label="Train loss")
+    plt.plot(indices_list, test_loss_list, '-', c="tab:orange", label="Test loss")
+    plt.plot(indices_list, train_loss_list, 'o', color='tab:blue', markersize=4)
+    plt.plot(indices_list, test_loss_list, 'o', color='tab:orange', markersize=4)
     plt.xlim(left=1)
-    plt.ylim((0, max_loss * 1.1))
+    plt.xticks(np.arange(1, len(indices_list) + 1, step=1))
+    plt.ylim((0, max_loss * 1.01))
     plt.grid(linewidth=1)
     plt.title("Train and test losses along epochs")
     plt.xlabel("Epochs")
@@ -535,18 +499,18 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
     plt.show()
 
 
-def main(pos_embd_dim, min_freq, word_embd_dim, BiLSTM_layers):
-    word_embd_dim = word_embd_dim  # if using pre-trained choose word_embd_dim from [50, 100, 200, 300]
-    pos_embd_dim = pos_embd_dim  # default is 25
-    hidden_dim = 125
-    MLP_inner_dim = 100
-    epochs = 15
-    learning_rate = 0.01
-    dropout_layers_probability = 0.0
-    weight_decay = 1e-5
-    alpha = 0.25  # 0.0 means no word dropout
-    min_freq = min_freq  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
-    BiLSTM_layers = BiLSTM_layers
+def main():
+    word_embd_dim = 100  # article's default
+    pos_embd_dim = 25  # article's default
+    hidden_dim = 125  # article's default
+    MLP_inner_dim = 100  # article's default
+    epochs = 30
+    learning_rate = 0.01  # Adam's default
+    dropout_layers_probability = 0.0  # nn.LSTM default
+    weight_decay = 0.0  # Adam's default
+    alpha = 0.25  # 0.0 means no word dropout | 0.25 article's default
+    min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    BiLSTM_layers = 2  # article's default
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
     path_train = "train.labeled"
@@ -574,39 +538,38 @@ def main(pos_embd_dim, min_freq, word_embd_dim, BiLSTM_layers):
     print(f"{current_machine_date_time}\n"
           f"{run_description}")
 
-    path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time}.pt')
+    path_to_save_model = os.path.join('saved_models', f'model {current_machine_date_time} ')
 
     """TRAIN DATA"""
     train_word_dict, train_pos_dict = get_vocabs_counts([path_train])
     train = DependencyDataset(path=path_train, word_dict=train_word_dict, pos_dict=train_pos_dict,
                               word_embd_dim=word_embd_dim, pos_embd_dim=pos_embd_dim, test=False,
-                              use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=min_freq)
+                              use_pre_trained=use_pre_trained, pre_trained_vectors_name=vectors, min_freq=min_freq,
+                              comp_mode=False)
     train_dataloader = DataLoader(train, shuffle=True)
     model = KiperwasserDependencyParser(train, hidden_dim, MLP_inner_dim, BiLSTM_layers, dropout_layers_probability)
 
     """TEST DATA"""
 
     test = DependencyDataset(path=path_test, word_dict=train_word_dict, pos_dict=train_pos_dict,
-                             test=[train.word_idx_mappings, train.pos_idx_mappings])
+                             test=[train.word_idx_mappings, train.pos_idx_mappings], comp_mode=False)
     test_dataloader = DataLoader(test, shuffle=False)
 
     """TRAIN THE PARSER ON TRAIN DATA"""
     train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list = \
-        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha)
+        train_kiperwasser_parser(model, train_dataloader, test_dataloader, epochs, learning_rate, weight_decay, alpha,
+                                 path_to_save_model)
 
     print(f'\ntrain_accuracy_list = {train_accuracy_list}'
           f'\ntrain_loss_list = {train_loss_list}'
           f'\ntest_accuracy_list = {test_accuracy_list}'
           f'\ntest_loss_list = {test_loss_list}')
 
-    """SAVE MODEL"""
-    torch.save(model.state_dict(), path_to_save_model.replace(':', '-'))
-
     """PLOT GRAPHS"""
-    # plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list)
+    # plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list) # TODO
 
-    # """EVALUATE ON TEST DATA"""
-    # evaluate(model, test_dataloader)
+    """TAG THE TEST DATA"""
+    # tag_file_save_output(model, test_dataloader, path_test, 'yotam_test_tagged.labeled')  # TODO
 
 
 def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list,
@@ -637,43 +600,7 @@ def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list,
 
 
 if __name__ == "__main__":
-    ### one run option ###
-    # epochs = 15
-    # pos_embd_dim = 25 # default is 25
-    # min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
-    # weight_decay = 0.0
-    # BiLSTM_layers = 2
-    #
-    # main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
-    # exit(3)
-
-    # TODO: final decisions:
-
-    ### run 1: combinations run option ###
-    # for epochs in [15]:
-    #     for pos_embd_dim in [15, 25, 50, 75, 100]:
-    #         for min_freq in [2, 3, 5, 10]:
-    #             for weight_dacay in [1e-5, 1e-6, 1e-7, 0.0]:
-    #                 for BiLSTM_layers in [2, 3, 4]:
-    #                     main(pos_embd_dim, min_freq, weight_dacay, epochs, BiLSTM_layers)
-
-    ### run 2: combinations run option ###
-    # for word_embd_dim in [100, 200, 300]:
-    #     for pos_embd_dim in [25, 50, 75, 100]:
-    #         for min_freq in [1, 2, 3]:
-    #             for weight_dacay in [1e-4, 1e-5]:  # only 1e-5 seems to be good
-    #                 for BiLSTM_layers in [2, 3]:
-    #                     main(pos_embd_dim, min_freq, weight_dacay, word_embd_dim, BiLSTM_layers)
-
-    # run 3: 6 chosen ones
-    # main(pos_embd_dim, min_freq, word_embd_dim, BiLSTM_layers)
-    main(75, 3, 200, 3)
-    main(25, 1, 100, 3)
-    main(100, 1, 100, 3)
-    main(50, 3, 200, 3)
-    main(75, 2, 300, 2)
-    main(100, 3, 300, 3)
-
+    main()
     # TODO gal do not touch
     # test0_accuracy_list = [0.8727104966642354, 0.8893802954456296, 0.897930519999827, 0.8985994775363773, 0.9024147626896759, 0.9032315328233659, 0.9057396530796497, 0.9041129008595366, 0.9074323189898621, 0.9085594565181768, 0.9068517342149139, 0.9087980613642939, 0.9079916950507139, 0.9077482190613283, 0.9115374263674864]
     # test01_accuracy_list = [0.8745952303818547, 0.891846345128242, 0.9000240995082567, 0.8975676189017281, 0.9023449139842078, 0.8996635935558741, 0.9031568997647944, 0.903084222231001, 0.904563341273347, 0.9040021500833616, 0.9057205887688459, 0.9087909525565078, 0.9036278991177055, 0.9055740197581077, 0.9080697350369914]
@@ -681,18 +608,3 @@ if __name__ == "__main__":
     # test2_accuracy_list = [0.8693521109877581, 0.8865615967570638, 0.8962231260051488, 0.9005227467073518, 0.9043345219473015, 0.9039425811643059, 0.9073953874092233, 0.9052128700217318, 0.9037999714323558, 0.9047589755353243, 0.9041192373737272, 0.9022990229207869, 0.9053757493664162, 0.9056269514471683, 0.9064894272351405]
     # test3_accuracy_list = [0.847536410303437, 0.8883146342123204, 0.8887979055703453, 0.8952708644741162,
     # plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list, test3_accuracy_list)
-
-    # TODO ADD THESE MAYBE
-    # hidden_dim = 125
-    # MLP_inner_dim = 100
-    # epochs = 30
-    # learning_rate = 0.01
-    # dropout_layers_probability = 0.0
-    # alpha = 0.0  # 0.0 means no word dropout
-    # use_pre_trained = False
-
-# TODO UNK_TOKEN_PER-POS - for every POS create token
-# TODO OOV - maybe try lower or upper
-# TODO LSTM ON CHARS
-# TODO CHANGE WORDS WITH NUMBERS AND NO a-zA-Z (allow ,:. etc) TO 'N'
-# TODO LOWER IF WORD NOT IN VOCAB
