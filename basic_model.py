@@ -1,5 +1,5 @@
 from torchtext.vocab import Vocab
-from torch.utils.data.dataset import Dataset, TensorDataset
+from torch.utils.data.dataset import Dataset
 from collections import Counter
 from collections import defaultdict
 import numpy as np
@@ -183,13 +183,6 @@ class DependencyDataset(Dataset):
             words, tags, heads = sample
             words_idx_list = [self.word_idx_mappings[word] if word in self.word_idx_mappings
                               else self.word_idx_mappings[UNKNOWN_TOKEN] for word in words]
-
-            # TODO try to see if this helps
-            # for word in words:
-            #     if word not in self.word_idx_mappings and \
-            #         (word[0].lower() + word[1:] in self.word_idx_mappings or
-            #          word[0].upper() + word[1:] in self.word_idx_mappings):
-            #         print(self.file, word)
 
             pos_idx_list = [self.pos_idx_mappings[tag] for tag in tags]
 
@@ -500,23 +493,23 @@ def plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_l
 
 
 def main():
-    word_embd_dim = 100  # article's default
-    pos_embd_dim = 25  # article's default
-    hidden_dim = 125  # article's default
+    word_embd_dim = 300
+    pos_embd_dim = 75
+    hidden_dim = 125
     MLP_inner_dim = 100  # article's default
     epochs = 30
     learning_rate = 0.01  # Adam's default
     dropout_layers_probability = 0.0  # nn.LSTM default
-    weight_decay = 0.0  # Adam's default
+    weight_decay = 1e-5
     alpha = 0.25  # 0.0 means no word dropout | 0.25 article's default
-    min_freq = 1  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
+    min_freq = 2  # minimum term-frequency to include in vocabulary, use 1 if you wish to use all words
     BiLSTM_layers = 2  # article's default
     use_pre_trained = False
     vectors = f'glove.6B.{word_embd_dim}d' if use_pre_trained else ''
-    path_train = "train.labeled"
-    path_test = "test.labeled"
+    path_train = "train_5700_sentences.labeled"
+    path_test = "test_300_sentences.labeled"
 
-    run_description = f"KiperwasserDependencyParser\n" \
+    run_description = f"Kiperwasser Dependency Parser\n" \
                       f"-------------------------------------------------------------------------------------------\n" \
                       f"word_embd_dim = {word_embd_dim}\n" \
                       f"pos_embd_dim = {pos_embd_dim}\n" \
@@ -565,12 +558,6 @@ def main():
           f'\ntest_accuracy_list = {test_accuracy_list}'
           f'\ntest_loss_list = {test_loss_list}')
 
-    """PLOT GRAPHS"""
-    # plot_graphs(train_accuracy_list, train_loss_list, test_accuracy_list, test_loss_list) # TODO
-
-    """TAG THE TEST DATA"""
-    # tag_file_save_output(model, test_dataloader, path_test, 'yotam_test_tagged.labeled')  # TODO
-
 
 def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list,
                                       test2_accuracy_list, test3_accuracy_list):
@@ -601,10 +588,3 @@ def plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list,
 
 if __name__ == "__main__":
     main()
-    # TODO gal do not touch
-    # test0_accuracy_list = [0.8727104966642354, 0.8893802954456296, 0.897930519999827, 0.8985994775363773, 0.9024147626896759, 0.9032315328233659, 0.9057396530796497, 0.9041129008595366, 0.9074323189898621, 0.9085594565181768, 0.9068517342149139, 0.9087980613642939, 0.9079916950507139, 0.9077482190613283, 0.9115374263674864]
-    # test01_accuracy_list = [0.8745952303818547, 0.891846345128242, 0.9000240995082567, 0.8975676189017281, 0.9023449139842078, 0.8996635935558741, 0.9031568997647944, 0.903084222231001, 0.904563341273347, 0.9040021500833616, 0.9057205887688459, 0.9087909525565078, 0.9036278991177055, 0.9055740197581077, 0.9080697350369914]
-    # test1_accuracy_list = [0.8724469579477907, 0.8931250160250392, 0.9012826544100603, 0.8971577191400117, 0.9025055033866338, 0.9039649728566629, 0.9068932193480703, 0.9030561335556132, 0.9077176005582834, 0.908902367632979, 0.9066836905249072, 0.9106718023398801, 0.9085296473936154, 0.9062363725260917, 0.9072766937607392]
-    # test2_accuracy_list = [0.8693521109877581, 0.8865615967570638, 0.8962231260051488, 0.9005227467073518, 0.9043345219473015, 0.9039425811643059, 0.9073953874092233, 0.9052128700217318, 0.9037999714323558, 0.9047589755353243, 0.9041192373737272, 0.9022990229207869, 0.9053757493664162, 0.9056269514471683, 0.9064894272351405]
-    # test3_accuracy_list = [0.847536410303437, 0.8883146342123204, 0.8887979055703453, 0.8952708644741162,
-    # plot_graphs_test_accuracy_analyze(test0_accuracy_list, test01_accuracy_list, test1_accuracy_list, test2_accuracy_list, test3_accuracy_list)
