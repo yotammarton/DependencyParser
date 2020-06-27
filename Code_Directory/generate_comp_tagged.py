@@ -18,7 +18,7 @@ def main():
                                                test=[train_basic.word_idx_mappings, train_basic.pos_idx_mappings],
                                                comp_mode=True)
     comp_basic_dataloader = basic_model.DataLoader(comp_basic, shuffle=False)
-    basic_model_weights_path = None  # TODO CHANGE!!!
+    basic_model_weights_path = 'basic_model_comp_weights.pt'
     trained_basic_model = basic_model.KiperwasserDependencyParser(dataset=train_basic, hidden_dim=125,
                                                                   MLP_inner_dim=100,
                                                                   BiLSTM_layers=2,
@@ -44,7 +44,7 @@ def main():
                                                            train_advanced.pos_idx_mappings],
                                                      comp_mode=True)
     comp_advanced_dataloader = advanced_model.DataLoader(comp_advanced, shuffle=False)
-    advanced_model_weights_path = None  # TODO CHANGE!!!
+    advanced_model_weights_path = 'adv_model_comp_weights.pt'
     trained_advanced_model = advanced_model.GoldMartDependencyParser(dataset=train_advanced, word_hidden_dim=125,
                                                                      MLP_inner_dim=100,
                                                                      BiLSTM_layers=3,
